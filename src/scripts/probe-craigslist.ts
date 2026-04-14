@@ -1,12 +1,13 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { createBrowser, defaultScraperConfig } from '../scrapers/base.js';
 import { logger } from '../utils/logger.js';
 
 const URL =
   process.argv[2] ??
   'https://boston.craigslist.org/search/sss?query=focal+aria+906&sort=date';
-const OUT_HTML = 'probe-craigslist.html';
-const OUT_JSON = 'probe-craigslist.json';
+mkdirSync('logs', { recursive: true });
+const OUT_HTML = 'logs/probe-craigslist.html';
+const OUT_JSON = 'logs/probe-craigslist.json';
 
 async function main() {
   const config = defaultScraperConfig();

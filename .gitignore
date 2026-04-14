@@ -2,9 +2,10 @@ node_modules/
 dist/
 data/
 .env
+logs/
 *.log
 .DS_Store
 
-# Local scraper-probe dumps (reverse-engineering artifacts)
+# Legacy: local scraper-probe dumps (now written to logs/, kept for safety)
 probe-*.html
 probe-*.json

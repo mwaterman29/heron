@@ -19,6 +19,19 @@ export function normalizeUrl(raw: string): string {
       if (m) u.pathname = `/goto/${m[1]}`;
     }
 
+    // eBay listing URLs look like:
+    //   /itm/<numeric_id>?itmmeta=...&hash=...&itmprp=...&_skw=...
+    // Everything after the numeric id rotates per session. Keep only the
+    // canonical /itm/<id> path.
+    if (u.hostname.endsWith('ebay.com')) {
+      const m = u.pathname.match(/^\/itm\/(\d+)/);
+      if (m) {
+        u.pathname = `/itm/${m[1]}`;
+        u.search = '';
+        u.hash = '';
+      }
+    }
+
     const drop: string[] = [];
     u.searchParams.forEach((_, k) => {
       if (k.startsWith('utm_') || k === 'fbclid' || k === 'ref') drop.push(k);

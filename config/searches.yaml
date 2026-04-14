@@ -27,6 +27,18 @@ searches:
     category: audio
     reference_id: focal-aria-906
 
+  - id: focal-aria-906-audiogon
+    site: audiogon
+    query: "focal aria 906"
+    category: audio
+    reference_id: focal-aria-906
+
+  - id: focal-aria-906-ebay
+    site: ebay
+    query: "focal aria 906"
+    category: audio
+    reference_id: focal-aria-906
+
   - id: svs-sub-fbmp
     site: fbmp
     query: "svs subwoofer"
@@ -56,6 +68,30 @@ searches:
     site: craigslist
     query: "svs subwoofer"
     location: boston
+    category: audio
+    reference_id: svs-sb
+
+  - id: svs-sub-audiogon
+    site: audiogon
+    query: "svs sb"
+    category: audio
+    reference_id: svs-sb
+
+  - id: svs-sub-audiogon-grail
+    site: audiogon
+    query: "svs sb-12 rosenut"
+    category: audio
+    reference_id: svs-sb
+
+  - id: svs-sub-ebay
+    site: ebay
+    query: "svs sb-1000"
+    category: audio
+    reference_id: svs-sb
+
+  - id: svs-sub-ebay-grail
+    site: ebay
+    query: "svs sb-12 plus rosenut"
     category: audio
     reference_id: svs-sb
 

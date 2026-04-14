@@ -45,11 +45,19 @@ RELEVANCE:
 - If the listing is not the reference item (wrong model, accessory, single when pair required, bundle when standalone required, "sold", part-out, grille-only, etc.), mark as "irrelevant".
 - Bundles that include other gear should be irrelevant unless the speakers/item alone can be reasonably valued.
 
-EXCEPTIONAL-BARGAIN EXCEPTION (important):
-- If a listing is NOT the exact reference item but is closely adjacent — same manufacturer, same product family, or a direct sibling/upgrade of the reference — AND the price is dramatically underpriced relative to the ADJACENT item's own fair market value (not the reference item's), surface it as "deal" or "steal" anyway.
-- Use this only for truly outstanding bargains, not for "it's cheap and in the same category". A rough bar: the listing should look like roughly 50% or more off the adjacent item's typical used price.
-- When you apply this exception, set relevant=true, pick the deal tier based on the bargain's magnitude, and in the reasoning EXPLICITLY state: (1) this is not the exact reference item, (2) what it actually is, (3) its approximate typical used value, and (4) why it's worth surfacing anyway.
-- Example: reference is SVS SB-1000, listing is an SVS SB-3000 (normally $700 used) at $250 — surface as "steal" with reasoning noting it's an SB-3000, not the SB-1000, but dramatically underpriced for what it is.
+EXCEPTIONAL-BARGAIN EXCEPTION (important — but STRICT):
+- If a listing is NOT the exact reference item but is closely adjacent — same manufacturer, same product family, or a direct sibling/upgrade of the reference — AND the price is dramatically underpriced relative to the ADJACENT item's own TYPICAL USED price (in dollars), surface it as "deal" or "steal" anyway.
+- The comparison point is TYPICAL USED PRICE IN USD. NOT new MSRP. NOT "open box discount from new". NOT "below retail".
+  • "Open box" / "refurbished" / "mint" are still sold at used-market prices, not new MSRP.
+  • A 10–20% discount from new MSRP is NOT an exceptional bargain. Reject it.
+  • A ~50%+ discount BELOW the adjacent item's typical USED price IS the bar. Be strict about this.
+- Sanity check before applying the exception:
+  1. Estimate the adjacent item's typical USED price in USD (call this U).
+  2. Is the listing price ≤ 0.6 × U? If no, mark irrelevant. If yes, proceed.
+  3. If you are not confident in your estimate of U, mark irrelevant — do NOT guess.
+- When you apply this exception, set relevant=true, pick the deal tier based on the bargain's magnitude, and in the reasoning EXPLICITLY state: (1) this is not the exact reference item, (2) what it actually is, (3) its estimated TYPICAL USED value U in USD, (4) the listing price in USD, (5) the ratio price/U, and (6) why it's worth surfacing. If the ratio is > 0.6 you MUST mark irrelevant instead.
+- Correct example: ref is SVS SB-1000 (fair_used $275), listing is an SVS SB-3000 (U ≈ $700 used) at $250. 250/700 = 0.36 ≤ 0.6 → surface as "steal". Reasoning: "Not the SB-1000 — this is an SB-3000, a direct upgrade. Typical used SB-3000 is around $700 USD. This is $250, ratio 0.36, dramatically below used market. Surfacing under adjacent-bargain exception."
+- Wrong example (do NOT do this): ref is SVS SB-1000, listing is SVS SB-3000 open box at $999, SB-3000 used is ~$700. 999/700 = 1.43, which is ABOVE used market. This is NOT a bargain, it's overpriced-or-fair for open box. Mark as irrelevant (or at most mark as "overpriced" if you want to log it).
 - Do NOT trigger this exception for items that merely share a category keyword (e.g. "any subwoofer cheap"). The adjacency must be real: same brand + same product line, or an unambiguous upgrade/successor.
 
 TIER DEFINITIONS (all USD-to-USD):

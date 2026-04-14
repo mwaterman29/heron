@@ -1,9 +1,10 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { createBrowser, defaultScraperConfig } from '../scrapers/base.js';
 import { logger } from '../utils/logger.js';
 
-const OUT_HTML = 'probe-usam.html';
-const OUT_JSON = 'probe-usam.json';
+mkdirSync('logs', { recursive: true });
+const OUT_HTML = 'logs/probe-usam.html';
+const OUT_JSON = 'logs/probe-usam.json';
 
 async function main() {
   const config = defaultScraperConfig();
