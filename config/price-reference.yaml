@@ -1,0 +1,98 @@
+references:
+  # ── Focal Aria 906 ────────────────────────────────────
+
+  - id: focal-aria-906
+    name: "Focal Aria 906"
+    type: bookshelf_speaker
+    msrp: 1300         # per pair
+    fair_used: 700      # typical used price, good condition
+    deal_price: 550     # would buy immediately at this price
+    steal_price: 400    # almost certainly broken or scam below this
+    shipping_notes: |
+      Bulky ~40lb pair, fragile drivers. US-based listings only (including CAN if
+      ground-shippable). International listings (UK, EU, AU, etc.) are IRRELEVANT
+      even at very low sticker prices — international shipping + import duty +
+      damage risk on fragile speakers adds $200-400+ to the landed cost and
+      eliminates any "deal" unless the price is roughly 50%+ below deal_price.
+      If the listing location is clearly outside the US/Canada, mark as irrelevant.
+    notes: |
+      Flax cone midrange/woofer, TNF tweeter.
+      Check for tweeter damage (exposed inverted dome is fragile).
+      Earlier 900 series (non-906) has a different tweeter, less desirable.
+      Only interested in the pair — single speaker is not useful.
+
+  # ── SVS Subwoofers ────────────────────────────────────
+
+  - id: svs-sb
+    name: "SVS SB-1000 / SB-12"
+    type: subwoofer
+    variants:
+      - model: "SB-1000 Pro"
+        msrp: 600
+        fair_used: 350
+        deal_price: 275
+        steal_price: 200
+      - model: "SB-1000 (original)"
+        msrp: 500
+        fair_used: 275
+        deal_price: 200
+        steal_price: 150
+      - model: "SB-12-NSD"
+        msrp: 400          # discontinued
+        fair_used: 200
+        deal_price: 150
+        steal_price: 100
+    grail: |
+      SB-12+ (Plus model, NOT NSD) in Rosenut finish.
+      This is a discontinued limited variant. Extremely rare.
+      If found under $300 in any condition, flag immediately.
+      Rosenut finish is the only one of interest for this model.
+    shipping_notes: |
+      Subwoofers are heavy (35-50lb) and bulky. US-based listings only (CAN
+      acceptable if ground-shippable). Non-US listings are irrelevant — shipping
+      and duty would eliminate any deal. EXCEPTION: the SB-12+ Rosenut grail is
+      rare enough that international listings should still be flagged if they
+      match grail criteria, so we can at least evaluate.
+
+  # ── W211 E500 ─────────────────────────────────────────
+
+  - id: w211-e500
+    name: "2003-2006 Mercedes-Benz E500 (W211)"
+    type: vehicle
+    year_range: [2003, 2006]
+    engine: "M113 5.0L V8"
+    fair_price: 8000
+    deal_price: 5500
+    steal_price: 3500
+    max_mileage: 120000
+    shipping_notes: |
+      Vehicle — local pickup only. Listings more than ~500 miles from Boston, MA
+      should be marked irrelevant unless the price is dramatically below deal_price
+      to justify a one-way flight + drive home. No international listings.
+    notes: |
+      KEY ISSUES TO WATCH FOR:
+      - SBC (Sensotronic Brake Control): The hydraulic brake pump.
+        Replacement is $2-3k. If listing says "SBC serviced" or
+        "brake pump replaced," that's a huge plus. MY2006 had
+        extended warranty to 25yr/unlimited miles for SBC.
+      - Airmatic suspension: Air struts fail, $800-1200 per corner.
+        "Lowered overnight" or sagging corner = airmatic failure.
+        If converted to coilovers, that's fine but affects ride.
+      - Transmission (722.6 5-speed auto): Needs fluid+filter service
+        every 40-60k. "Lifetime fluid" is a myth. If seller confirms
+        trans service history, that's a significant plus.
+      - Balance shaft sprocket (LESS relevant — mainly M272 V6 issue,
+        M113 V8 is more reliable on this front)
+
+      IDEAL LISTING SIGNALS:
+      - "SBC replaced/serviced"
+      - "New air struts" or "Arnott/Bilstein airmatic"
+      - "Trans fluid changed at Xk"
+      - Service records / single owner / garaged
+      - Under 120k miles
+
+      RED FLAGS:
+      - "Runs and drives" with no detail = hiding something
+      - Under $3k = almost guaranteed major mechanical issue
+      - "Needs work" on a W211 = money pit
+      - Salvage/rebuilt title

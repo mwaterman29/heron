@@ -1,0 +1,31 @@
+{
+  "name": "deal-hunter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automated marketplace deal finder",
+  "type": "module",
+  "scripts": {
+    "hunt": "tsx src/index.ts",
+    "hunt:dry": "tsx src/index.ts --dry-run-llm --console-notify",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "db:smoke": "tsx src/scripts/db-smoketest.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "js-yaml": "^4.1.0",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2",
+    "puppeteer": "^23.5.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.7.4",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}
