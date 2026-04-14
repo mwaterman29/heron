@@ -4,3 +4,7 @@ data/
 .env
 *.log
 .DS_Store
+
+# Local scraper-probe dumps (reverse-engineering artifacts)
+probe-*.html
+probe-*.json

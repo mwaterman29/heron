@@ -20,6 +20,13 @@ searches:
     category: audio
     reference_id: focal-aria-906
 
+  - id: focal-aria-906-cl
+    site: craigslist
+    query: "focal aria 906"
+    location: boston
+    category: audio
+    reference_id: focal-aria-906
+
   - id: svs-sub-fbmp
     site: fbmp
     query: "svs subwoofer"
@@ -45,6 +52,13 @@ searches:
     category: audio
     reference_id: svs-sb
 
+  - id: svs-sub-cl
+    site: craigslist
+    query: "svs subwoofer"
+    location: boston
+    category: audio
+    reference_id: svs-sb
+
   # ── Automotive ─────────────────────────────────────────
 
   - id: w211-e500-fbmp
@@ -57,6 +71,20 @@ searches:
   - id: w211-e500-fbmp-2
     site: fbmp
     query: "Mercedes E500"
+    location: boston
+    category: auto
+    reference_id: w211-e500
+
+  - id: w211-e500-cl
+    site: craigslist
+    query: "mercedes E500"
+    location: boston
+    category: auto
+    reference_id: w211-e500
+
+  - id: w211-e500-cl-2
+    site: craigslist
+    query: "E500 W211"
     location: boston
     category: auto
     reference_id: w211-e500
