@@ -1,9 +1,22 @@
+# User profile — defaults inherited by every reference unless overridden.
+user:
+  location: boston
+
 references:
   # ── Focal Aria 906 ────────────────────────────────────
 
   - id: focal-aria-906
     name: "Focal Aria 906"
     type: bookshelf_speaker
+    category: audio
+    query: "focal aria 906"
+    sites:
+      - hifishark
+      - usaudiomart
+      - audiogon
+      - ebay
+      - craigslist
+      - fbmp
     msrp: 1300         # per pair
     fair_used: 700      # typical used price, good condition
     deal_price: 550     # would buy immediately at this price
@@ -26,6 +39,28 @@ references:
   - id: svs-sb
     name: "SVS SB-1000 / SB-12"
     type: subwoofer
+    category: audio
+    # Default query is deliberately broad to catch generic "svs subwoofer"
+    # listings on sites that won't match model-specific strings.
+    query: "svs subwoofer"
+    sites:
+      - hifishark
+      - usaudiomart
+      - audiogon
+      - ebay
+      - craigslist
+      - fbmp
+    # Some sites index tightly enough that a model-specific query works better.
+    # Audiogon and eBay also get a second grail-hunt query for the SB-12+ Rosenut.
+    site_overrides:
+      hifishark:
+        query: "svs sb"
+      usaudiomart:
+        queries: ["svs sb-1000", "svs sb-12"]
+      audiogon:
+        queries: ["svs sb", "svs sb-12 rosenut"]
+      ebay:
+        queries: ["svs sb-1000", "svs sb-12 plus rosenut"]
     variants:
       - model: "SB-1000 Pro"
         msrp: 600
@@ -59,6 +94,13 @@ references:
   - id: w211-e500
     name: "2003-2006 Mercedes-Benz E500 (W211)"
     type: vehicle
+    category: auto
+    queries:
+      - "E500 W211"
+      - "Mercedes E500"
+    sites:
+      - craigslist
+      - fbmp
     year_range: [2003, 2006]
     engine: "M113 5.0L V8"
     fair_price: 8000
@@ -84,7 +126,16 @@ references:
       - Balance shaft sprocket (LESS relevant — mainly M272 V6 issue,
         M113 V8 is more reliable on this front)
 
+      BUYER PREFERENCES:
+      - Color: BLACK strongly preferred. Silver/grey acceptable but a discount.
+        Other colors (white, blue, brown, etc.) are a real negative — downgrade
+        a tier unless price compensates.
+      - Drivetrain: RWD strongly preferred. 4MATIC (AWD) is undesirable — more
+        complex, extra failure points, heavier. A 4MATIC listing should be
+        downgraded a tier unless priced well below a comparable RWD.
+
       IDEAL LISTING SIGNALS:
+      - Black exterior, RWD (non-4MATIC)
       - "SBC replaced/serviced"
       - "New air struts" or "Arnott/Bilstein airmatic"
       - "Trans fluid changed at Xk"

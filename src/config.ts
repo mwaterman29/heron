@@ -1,15 +1,20 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import yaml from 'js-yaml';
 
-export interface SearchConfig {
-  id: string;
-  site: string;
-  query: string;
-  location?: string;
-  category: string;
-  reference_id: string;
-}
+/**
+ * Config is item-first: one entry per target item in
+ * config/price-reference.yaml, and searches are generated at load time by
+ * projecting each reference across the sites it lists. We no longer keep
+ * a separate config/searches.yaml.
+ *
+ * A reference declares:
+ *   - what it is (name, type, pricing tiers)
+ *   - what to search for (query OR queries[])
+ *   - where to search (sites[])
+ *   - optional site_overrides to use a different query on a specific site
+ *   - optional location (for craigslist/fbmp; falls back to user.location)
+ */
 
 export interface Variant {
   model: string;
@@ -19,11 +24,32 @@ export interface Variant {
   steal_price: number;
 }
 
+export interface SiteOverride {
+  /** Single query that replaces the reference's default for this site. */
+  query?: string;
+  /** Multiple queries that replace the reference's default for this site. */
+  queries?: string[];
+  /** Location override (e.g. a different craigslist city for this site). */
+  location?: string;
+}
+
 export interface PriceReference {
   id: string;
   name: string;
   type: string;
-  // Flat-tier fields (present on some references)
+  category?: string;
+  /** Default search query for this reference across all sites. */
+  query?: string;
+  /** Multiple default queries (e.g. "svs sb" + grail variants). Preferred over `query` when present. */
+  queries?: string[];
+  /** Scraper IDs to search on for this reference (e.g. ['ebay','hifishark']). */
+  sites?: string[];
+  /** Per-site query / location tweaks. */
+  site_overrides?: Record<string, SiteOverride>;
+  /** Location hint used by craigslist / fbmp scrapers. Falls back to user.location. */
+  location?: string;
+
+  // Pricing tiers (all USD). Either flat or variants[].
   msrp?: number;
   fair_used?: number;
   fair_price?: number;
@@ -41,14 +67,24 @@ export interface PriceReference {
   shipping_notes?: string;
 }
 
-export interface ResolvedSearch extends SearchConfig {
+export interface UserProfile {
+  /** Default location for craigslist/fbmp (e.g. 'boston'). */
+  location?: string;
+}
+
+/** A fully-resolved, ready-to-execute search. Emitted by loadConfig(). */
+export interface ResolvedSearch {
+  id: string;
+  site: string;
+  query: string;
+  location?: string;
+  category: string;
+  reference_id: string;
   reference: PriceReference;
 }
 
-interface SearchesFile {
-  searches: SearchConfig[];
-}
 interface ReferencesFile {
+  user?: UserProfile;
   references: PriceReference[];
 }
 
@@ -57,26 +93,65 @@ function loadYaml<T>(path: string): T {
   return yaml.load(raw) as T;
 }
 
+function queriesFor(ref: PriceReference, override?: SiteOverride): string[] {
+  if (override?.queries && override.queries.length > 0) return override.queries;
+  if (override?.query) return [override.query];
+  if (ref.queries && ref.queries.length > 0) return ref.queries;
+  if (ref.query) return [ref.query];
+  // Fallback: use the reference name itself as the query
+  return [ref.name];
+}
+
+function slugify(q: string): string {
+  return q
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+}
+
 export function loadConfig(root: string = process.cwd()): {
   searches: ResolvedSearch[];
   references: Map<string, PriceReference>;
+  user: UserProfile;
 } {
-  const searchesFile = loadYaml<SearchesFile>(resolve(root, 'config/searches.yaml'));
-  const refsFile = loadYaml<ReferencesFile>(resolve(root, 'config/price-reference.yaml'));
+  const refPath = resolve(root, 'config/price-reference.yaml');
+  if (!existsSync(refPath)) {
+    throw new Error(`Missing config/price-reference.yaml at ${refPath}`);
+  }
+  const refsFile = loadYaml<ReferencesFile>(refPath);
+  const user: UserProfile = refsFile.user ?? {};
 
   const references = new Map<string, PriceReference>();
   for (const r of refsFile.references) references.set(r.id, r);
 
   const resolved: ResolvedSearch[] = [];
-  for (const s of searchesFile.searches) {
-    const ref = references.get(s.reference_id);
-    if (!ref) {
-      throw new Error(
-        `Search '${s.id}' references unknown reference_id '${s.reference_id}'`,
-      );
+  for (const ref of refsFile.references) {
+    if (!ref.sites || ref.sites.length === 0) {
+      // A reference with no sites is intentionally dormant (documented but not searched)
+      continue;
     }
-    resolved.push({ ...s, reference: ref });
+
+    for (const site of ref.sites) {
+      const override = ref.site_overrides?.[site];
+      const queries = queriesFor(ref, override);
+      const location = override?.location ?? ref.location ?? user.location;
+      const category = ref.category ?? ref.type ?? 'general';
+
+      queries.forEach((query, idx) => {
+        const suffix = queries.length > 1 ? `-${slugify(query)}` : '';
+        resolved.push({
+          id: `${ref.id}-${site}${suffix}`,
+          site,
+          query,
+          location,
+          category,
+          reference_id: ref.id,
+          reference: ref,
+        });
+      });
+    }
   }
 
-  return { searches: resolved, references };
+  return { searches: resolved, references, user };
 }
