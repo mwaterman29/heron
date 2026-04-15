@@ -106,17 +106,50 @@ ${listingBlocks.join('\n\n')}
 Remember: extracted_price MUST be in USD. Compare USD-to-USD against the reference tiers. Respect shipping_notes if present.`;
 }
 
-function parseAndValidate(raw: string, listingCount: number): LLMEvaluation[] {
-  // Strip possible markdown fences defensively
+/**
+ * Light JSON repair for the common DeepSeek/OpenRouter quirks:
+ *   - trailing commas inside objects/arrays
+ *   - line comments (//) that shouldn't be there but sometimes are
+ *   - single-quoted strings (rare)
+ * This is a last-ditch attempt before giving up on a response.
+ */
+function repairJson(raw: string): string {
+  return raw
+    // Remove line comments
+    .replace(/(?<!["'])\/\/[^\n]*/g, '')
+    // Remove trailing commas before closing brackets/braces
+    .replace(/,(\s*[}\]])/g, '$1');
+}
+
+function tolerantParse(raw: string): unknown {
   let cleaned = raw.trim();
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
   }
-  const parsed = JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    // One retry with light repair
+    const repaired = repairJson(cleaned);
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      // Log a sample of the offending text to help debugging
+      logger.error(
+        { sample: cleaned.slice(0, 300) + '...' + cleaned.slice(-300), origErr: (err as Error).message },
+        'JSON parse failed even after repair',
+      );
+      throw err;
+    }
+  }
+}
+
+function parseAndValidate(raw: string, listingCount: number): LLMEvaluation[] {
+  const parsed = tolerantParse(raw) as { evaluations?: unknown };
   if (!parsed || !Array.isArray(parsed.evaluations)) {
     throw new Error('LLM response missing evaluations array');
   }
-  const evals: LLMEvaluation[] = parsed.evaluations;
+  const evals: LLMEvaluation[] = parsed.evaluations as LLMEvaluation[];
   // Light validation; fill in missing fields with defaults
   return evals.map((e) => ({
     listing_index: Number(e.listing_index ?? 0),
@@ -213,21 +246,27 @@ export async function evaluateBatch(
   const primary = process.env.OPENROUTER_MODEL ?? 'deepseek/deepseek-chat-v3.1';
   const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'z-ai/glm-4.7-flash';
 
-  let raw: string | null = null;
-  try {
-    raw = await callOpenRouter(primary, system, user);
-  } catch (err) {
-    logger.warn({ err, model: primary }, 'primary model failed, retrying once');
-    await new Promise((r) => setTimeout(r, 5000));
-    try {
-      raw = await callOpenRouter(primary, system, user);
-    } catch (err2) {
-      logger.warn({ err: err2, model: primary }, 'primary retry failed, trying fallback');
-      raw = await callOpenRouter(fallback, system, user);
-    }
+  // Try primary → retry primary → fallback. A call counts as "failed"
+  // if either the network call throws OR the response fails to parse
+  // — both are equally useless to the orchestrator.
+  async function tryCall(model: string): Promise<LLMEvaluation[]> {
+    const raw = await callOpenRouter(model, system, user);
+    return parseAndValidate(raw, listings.length);
   }
 
-  const evals = parseAndValidate(raw, listings.length);
+  let evals: LLMEvaluation[] | null = null;
+  try {
+    evals = await tryCall(primary);
+  } catch (err) {
+    logger.warn({ err, model: primary }, 'primary model failed/unparseable, retrying once');
+    await new Promise((r) => setTimeout(r, 5000));
+    try {
+      evals = await tryCall(primary);
+    } catch (err2) {
+      logger.warn({ err: err2, model: primary }, 'primary retry failed, trying fallback');
+      evals = await tryCall(fallback);
+    }
+  }
   for (const e of evals) {
     const listing = listings[e.listing_index];
     if (!listing) continue;

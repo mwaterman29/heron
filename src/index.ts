@@ -2,15 +2,16 @@ import 'dotenv/config';
 import { logger } from './utils/logger.js';
 import { loadConfig, type ResolvedSearch, type PriceReference } from './config.js';
 import {
-  markEvaluated,
   markNotified,
+  markPass1,
+  markPass2,
   upsertListing,
   type SeenItemRow,
   type Verdict,
 } from './db.js';
 import { getScraper, listRegisteredSites } from './scrapers/index.js';
-import { defaultScraperConfig } from './scrapers/base.js';
-import { chunk, evaluateBatch } from './evaluator.js';
+import { defaultScraperConfig, type DetailPage } from './scrapers/base.js';
+import { chunk, evaluateBatch, evaluateDetail } from './evaluator.js';
 import { pickNotifier, type DealPayload } from './notifier.js';
 
 interface CliFlags {
@@ -54,6 +55,24 @@ function parseFlags(argv: string[]): CliFlags {
 interface QueueItem {
   listing: SeenItemRow;
   reference: PriceReference;
+}
+
+async function notifyDeal(
+  listing: SeenItemRow,
+  verdict: Verdict,
+  reference: PriceReference,
+  notifier: ReturnType<typeof import('./notifier.js').pickNotifier>,
+): Promise<void> {
+  const payload: DealPayload = { listing, verdict, reference };
+  try {
+    await notifier.notify(payload);
+    markNotified(listing.id);
+  } catch (notifyErr) {
+    logger.error(
+      { err: notifyErr, itemId: listing.id },
+      'notification failed — will retry next run',
+    );
+  }
 }
 
 async function main() {
@@ -151,13 +170,22 @@ async function main() {
       ),
     );
 
+    // --- Pass 1 complete: collect deal candidates for drill-down ------------
+    interface DealCandidate {
+      listing: SeenItemRow;
+      reference: PriceReference;
+      pass1: Verdict;
+      scraperId: string;
+    }
+    const candidates: DealCandidate[] = [];
+
     for (const { job, verdicts, err } of results) {
       if (err || !verdicts) {
         logger.error({ err, refId: job.refId }, 'evaluator failed — leaving items unevaluated');
         continue;
       }
       for (const [itemId, verdict] of verdicts) {
-        markEvaluated(itemId, verdict);
+        markPass1(itemId, verdict);
 
         const isDeal =
           verdict.grail_match ||
@@ -167,13 +195,101 @@ async function main() {
 
         const listing = job.listings.find((b) => b.id === itemId);
         if (!listing) continue;
-        const payload: DealPayload = { listing, verdict, reference: job.reference };
-        try {
-          await notifier.notify(payload);
-          markNotified(itemId);
-        } catch (notifyErr) {
-          logger.error({ err: notifyErr, itemId }, 'notification failed — will retry next run');
-        }
+        candidates.push({
+          listing,
+          reference: job.reference,
+          pass1: verdict,
+          scraperId: listing.site,
+        });
+      }
+    }
+
+    // --- Pass 2: fetch detail + revise verdict + notify ---------------------
+    // Sequential (not parallel) — we expect 0-5 candidates per run and we
+    // don't want to hammer any single site. Each candidate is independently
+    // wrapped in try/catch: detail-fetch failures and LLM failures both fall
+    // back to the pass-1 verdict so the notification still fires.
+    if (candidates.length > 0) {
+      logger.info({ count: candidates.length }, 'pass-1 flagged deal candidates — running pass-2 drill-down');
+    }
+
+    for (const cand of candidates) {
+      const scraper = getScraper(cand.scraperId);
+      if (!scraper || !scraper.fetchDetail) {
+        logger.info(
+          { itemId: cand.listing.id, site: cand.scraperId },
+          'no fetchDetail for scraper — notifying on pass-1 verdict',
+        );
+        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        continue;
+      }
+
+      let detail: DetailPage | null = null;
+      try {
+        logger.info({ itemId: cand.listing.id, url: cand.listing.url }, 'pass-2 fetching detail');
+        detail = await scraper.fetchDetail(cand.listing.url, scraperConfig);
+      } catch (fetchErr) {
+        logger.warn(
+          { err: fetchErr, itemId: cand.listing.id },
+          'pass-2 detail fetch failed — notifying on pass-1 verdict',
+        );
+        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        continue;
+      }
+
+      // If the detail page is too thin to be useful (Cloudflare stub,
+      // challenge page, empty), fall back to the pass-1 verdict rather
+      // than feeding garbage to the LLM.
+      if (!detail || detail.rawText.length < 500) {
+        logger.warn(
+          { itemId: cand.listing.id, rawTextLen: detail?.rawText.length ?? 0 },
+          'pass-2 detail content too thin — notifying on pass-1 verdict',
+        );
+        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        continue;
+      }
+
+      let pass2: Verdict;
+      try {
+        pass2 = await evaluateDetail(cand.reference, cand.listing, cand.pass1, detail, {
+          dryRun: flags.dryRunLLM,
+        });
+      } catch (evalErr) {
+        logger.error(
+          { err: evalErr, itemId: cand.listing.id },
+          'pass-2 evaluator failed — notifying on pass-1 verdict',
+        );
+        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        continue;
+      }
+
+      markPass2(cand.listing.id, pass2);
+
+      const pass2IsDeal =
+        pass2.grail_match || pass2.deal_tier === 'steal' || pass2.deal_tier === 'deal';
+
+      if (pass2IsDeal) {
+        logger.info(
+          {
+            itemId: cand.listing.id,
+            pass1: cand.pass1.deal_tier,
+            pass2: pass2.deal_tier,
+            grail: pass2.grail_match,
+          },
+          'pass-2 confirmed deal',
+        );
+        await notifyDeal(cand.listing, pass2, cand.reference, notifier);
+      } else {
+        logger.info(
+          {
+            itemId: cand.listing.id,
+            title: cand.listing.title,
+            pass1: cand.pass1.deal_tier,
+            pass2: pass2.deal_tier,
+            pass2Reasoning: pass2.reasoning,
+          },
+          'pass-2 downgraded — NOT notifying',
+        );
       }
     }
   }
