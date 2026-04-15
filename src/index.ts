@@ -132,7 +132,11 @@ async function main() {
   for (const [refId, items] of queueByRef) {
     if (items.length === 0) continue;
     const reference = items[0].reference;
-    for (const listings of chunk(items.map((i) => i.listing), 10)) {
+    // Chunk size = 25. Safely within DeepSeek 3.1's 128K context window
+    // (roughly 15K input tokens per batch) while avoiding the degradation
+    // risk of much larger batches. A 147-listing run drops from 14 batches
+    // to 6, with ~proportional wall-time improvement.
+    for (const listings of chunk(items.map((i) => i.listing), 25)) {
       jobs.push({ refId, reference, listings });
     }
   }
