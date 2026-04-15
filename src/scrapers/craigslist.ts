@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import {
   createBrowser,
   randomDelay,
+  type DetailPage,
   type Scraper,
   type ScraperConfig,
   type RawListing,
@@ -45,6 +46,96 @@ const LOCATION_TO_SUBDOMAIN: Record<string, string> = {
 export const craigslistScraper: Scraper = {
   id: SITE_ID,
   needsHeaded: false,
+
+  /**
+   * Craigslist detail pages have a stable DOM:
+   *   #postingbody                  - seller-written description
+   *   .postingtitletext / h1        - title + price + location
+   *   .attrgroup .attr              - structured attributes (cars/trucks)
+   *     [data-name=condition, odometer, title_status, transmission,
+   *      drive, paint_color, fuel, cylinders, ...]
+   * For autos this is gold — mileage, drive (rwd/fwd/4wd), paint color,
+   * title status, transmission are exactly what the pass-2 evaluator needs
+   * to judge the W211 E500 against the reference's buyer preferences.
+   */
+  async fetchDetail(url: string, config: ScraperConfig): Promise<DetailPage> {
+    const browser = await createBrowser(config);
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1400, height: 900 });
+      await page.setUserAgent(
+        config.userAgent ??
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      );
+      await page.evaluateOnNewDocument(
+        'window.__name = window.__name || function(fn){return fn;};',
+      );
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.timeout });
+      await new Promise((r) => setTimeout(r, 1200));
+
+      const result = await page.evaluate(() => {
+        function text(sel: string): string | null {
+          const el = document.querySelector(sel);
+          return el ? ((el as HTMLElement).innerText || el.textContent || '').trim() : null;
+        }
+
+        const title = text('.postingtitletext .price + .postingtitletext, .postingtitletext') ?? document.title;
+        const price = text('.price');
+        const mapAddress = text('.mapaddress');
+        const bodyEl = document.querySelector('#postingbody');
+        // Strip the "QR code" boilerplate block CL prepends.
+        let body = bodyEl ? ((bodyEl as HTMLElement).innerText || '').trim() : '';
+        body = body.replace(/^QR Code Link to This Post\s*/i, '').trim();
+
+        // Structured attrs (autos + many categories)
+        const extras: Record<string, string> = {};
+        const attrEls = Array.from(document.querySelectorAll('.attrgroup .attr')) as HTMLElement[];
+        for (const attr of attrEls) {
+          const name = attr.getAttribute('data-name') || '';
+          const valEl = attr.querySelector('.valu') as HTMLElement | null;
+          const val = (valEl?.innerText || attr.innerText || '').trim();
+          if (name && val) extras[name] = val;
+        }
+        // Also pull free-text attr rows (no data-name) as a fallback
+        if (Object.keys(extras).length === 0) {
+          attrEls.forEach((a, i) => {
+            const t = (a.innerText || '').trim();
+            if (t) extras[`attr_${i}`] = t;
+          });
+        }
+
+        // Compose a rich rawText for the LLM
+        const lines = [
+          title ? `Title: ${title}` : null,
+          price ? `Price: ${price}` : null,
+          mapAddress ? `Location: ${mapAddress}` : null,
+          Object.keys(extras).length
+            ? `Attributes:\n${Object.entries(extras)
+                .map(([k, v]) => `  ${k}: ${v}`)
+                .join('\n')}`
+            : null,
+          body ? `Description:\n${body}` : null,
+        ].filter(Boolean);
+        const rawText = lines.join('\n\n').slice(0, 8000);
+
+        return { title, price, location: mapAddress, extras, rawText };
+      });
+
+      return {
+        url,
+        rawText: result.rawText,
+        title: result.title || undefined,
+        price: result.price || null,
+        currency: result.price ? 'USD' : null,
+        location: result.location || null,
+        extras: result.extras,
+        fetchedAt: Date.now(),
+      };
+    } finally {
+      await browser.close();
+    }
+  },
 
   async scrape(search: ResolvedSearch, config: ScraperConfig): Promise<RawListing[]> {
     const locKey = (search.location ?? 'boston').toLowerCase();

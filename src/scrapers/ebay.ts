@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import {
   createBrowser,
   randomDelay,
+  type DetailPage,
   type Scraper,
   type ScraperConfig,
   type RawListing,
@@ -39,6 +40,116 @@ const LOC_US_ONLY = 1;
 export const ebayScraper: Scraper = {
   id: SITE_ID,
   needsHeaded: false,
+
+  /**
+   * eBay detail pages contain:
+   *   h1.x-item-title__mainTitle / #itemTitle       - title
+   *   .x-price-primary / .x-bin-price__content      - current price
+   *   .ux-layout-section-evo__item (grid)           - item specifics
+   *     (brand, model, type, condition, color, etc.)
+   *   #viTabs_0_is .x-item-description or the body  - seller description
+   *   .ux-labels-values__labels                     - condition summary
+   *
+   * We grab the title, price, top item-specifics grid, and a trimmed body
+   * innerText fallback. eBay boilerplate (seller info, shipping, returns,
+   * related items) is noisy but the LLM can ignore it.
+   */
+  async fetchDetail(url: string, config: ScraperConfig): Promise<DetailPage> {
+    const browser = await createBrowser(config);
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1400, height: 900 });
+      await page.setUserAgent(
+        config.userAgent ??
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      );
+      await page.evaluateOnNewDocument(
+        'window.__name = window.__name || function(fn){return fn;};',
+      );
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.timeout });
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const result = await page.evaluate(() => {
+        function text(sel: string): string | null {
+          const el = document.querySelector(sel);
+          return el ? ((el as HTMLElement).innerText || el.textContent || '').trim() : null;
+        }
+
+        const title =
+          text('h1.x-item-title__mainTitle') ||
+          text('h1.it-ttl') ||
+          text('#itemTitle') ||
+          text('h1') ||
+          document.title;
+
+        const price =
+          text('.x-price-primary') ||
+          text('.x-bin-price__content') ||
+          text('[itemprop="price"]') ||
+          text('.display-price') ||
+          null;
+
+        const condition =
+          text('.x-item-condition-text') ||
+          text('.ux-labels-values__values [class*="condition"]') ||
+          null;
+
+        // Item specifics — grab the labels/values grid
+        const specifics: Record<string, string> = {};
+        const labelEls = Array.from(
+          document.querySelectorAll('.ux-layout-section-evo__item .ux-labels-values__labels, .ux-labels-values__labels'),
+        ) as HTMLElement[];
+        for (const labelEl of labelEls) {
+          const label = (labelEl.innerText || '').trim().replace(/:$/, '');
+          const valueEl = labelEl.nextElementSibling as HTMLElement | null;
+          const value = valueEl ? (valueEl.innerText || '').trim() : '';
+          if (label && value && !specifics[label]) {
+            specifics[label] = value.slice(0, 200);
+          }
+        }
+
+        // Seller description / body text fallback
+        const bodyText = (document.body?.innerText || '').trim();
+
+        const extras: Record<string, string> = {};
+        if (condition) extras.condition = condition;
+        for (const [k, v] of Object.entries(specifics)) extras[k] = v;
+
+        const lines = [
+          title ? `Title: ${title}` : null,
+          price ? `Price: ${price}` : null,
+          condition ? `Condition: ${condition}` : null,
+          Object.keys(specifics).length
+            ? `Item Specifics:\n${Object.entries(specifics)
+                .map(([k, v]) => `  ${k}: ${v}`)
+                .join('\n')}`
+            : null,
+        ].filter(Boolean);
+
+        const header = lines.join('\n\n');
+        // Cap body text so the header is always visible
+        const remaining = Math.max(0, 8000 - header.length - 20);
+        const body = bodyText.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').slice(0, remaining);
+        const rawText = header + (body ? `\n\nBody:\n${body}` : '');
+
+        return { title, price, extras, rawText };
+      });
+
+      return {
+        url,
+        rawText: result.rawText,
+        title: result.title || undefined,
+        price: result.price,
+        currency: result.price ? 'USD' : null,
+        location: null,
+        extras: result.extras,
+        fetchedAt: Date.now(),
+      };
+    } finally {
+      await browser.close();
+    }
+  },
 
   async scrape(search: ResolvedSearch, config: ScraperConfig): Promise<RawListing[]> {
     const params = new URLSearchParams({

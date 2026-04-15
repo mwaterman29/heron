@@ -1,5 +1,13 @@
 import { logger } from '../utils/logger.js';
-import { createBrowser, randomDelay, type Scraper, type ScraperConfig, type RawListing } from './base.js';
+import {
+  createBrowser,
+  genericFetchDetail,
+  randomDelay,
+  type DetailPage,
+  type Scraper,
+  type ScraperConfig,
+  type RawListing,
+} from './base.js';
 import type { ResolvedSearch } from '../config.js';
 
 const SITE_ID = 'hifishark';
@@ -18,6 +26,20 @@ const SITE_ID = 'hifishark';
 export const hifisharkScraper: Scraper = {
   id: SITE_ID,
   needsHeaded: false,
+
+  /**
+   * HiFi Shark's /goto/<id> URL is a redirect that bounces to the source
+   * marketplace (eBay / Audiogon / Canuck / etc.). genericFetchDetail
+   * handles the redirect hop fine: goto() follows it, the page lands on
+   * the destination, and body.innerText captures whatever is there.
+   *
+   * A future optimization would hand off to the destination marketplace's
+   * per-site detail fetcher, but the generic body-text path is already
+   * enough for the LLM to evaluate.
+   */
+  async fetchDetail(url: string, config: ScraperConfig): Promise<DetailPage> {
+    return genericFetchDetail(url, config, { waitUntil: 'networkidle2', waitMs: 2000 });
+  },
 
   async scrape(search: ResolvedSearch, config: ScraperConfig): Promise<RawListing[]> {
     const url = `https://www.hifishark.com/search?q=${encodeURIComponent(search.query)}`;

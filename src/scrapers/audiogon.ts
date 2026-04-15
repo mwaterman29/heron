@@ -1,7 +1,9 @@
 import { logger } from '../utils/logger.js';
 import {
   createBrowser,
+  genericFetchDetail,
   randomDelay,
+  type DetailPage,
   type Scraper,
   type ScraperConfig,
   type RawListing,
@@ -35,6 +37,73 @@ const SITE_ID = 'audiogon';
 export const audiogonScraper: Scraper = {
   id: SITE_ID,
   needsHeaded: false,
+
+  /**
+   * Audiogon detail pages are gated by a Cloudflare challenge that
+   * headless-chromium + stealth does NOT pass reliably (even with a
+   * 20s title-poll wait). The search listings endpoint is uncached and
+   * works fine, but detail pages require harder anti-bot bypass.
+   *
+   * Known-limitation strategy: we still attempt the fetch with a title
+   * poll so that if CF ever cooperates we get real content, but when it
+   * fails the returned DetailPage.rawText is just the ~264-char CF stub.
+   * The orchestrator in Phase D detects "rawText too thin" (< 500 chars)
+   * and falls back to the pass-1 verdict rather than passing a stub to
+   * the evaluator. So pass-2 silently no-ops on Audiogon deal candidates,
+   * which is acceptable for v1.
+   *
+   * Future fix ideas: headed mode via HEADLESS=false, or a dedicated
+   * CF-bypass service. Not worth the complexity right now.
+   */
+  async fetchDetail(url: string, config: ScraperConfig): Promise<DetailPage> {
+    const browser = await createBrowser(config);
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1400, height: 900 });
+      await page.setUserAgent(
+        config.userAgent ??
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      );
+      await page.evaluateOnNewDocument(
+        'window.__name = window.__name || function(fn){return fn;};',
+      );
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.timeout });
+
+      // Wait for Cloudflare challenge to resolve — title leaves "Just a moment..."
+      try {
+        await page.waitForFunction(
+          () => !/just a moment/i.test(document.title),
+          { timeout: 20_000, polling: 500 },
+        );
+      } catch {
+        logger.warn({ site: SITE_ID, url }, 'Cloudflare challenge did not resolve within 20s');
+      }
+      // Small settle buffer after the redirect lands
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const result = await page.evaluate(() => {
+        const title = (document.title || '').trim();
+        const bodyRaw = (document.body?.innerText || '').trim();
+        const bodyText = bodyRaw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').slice(0, 8000);
+        // Heuristic price pull
+        const priceMatch = bodyRaw.match(/\$\s?[\d,]+(?:\.\d+)?/);
+        const price = priceMatch ? priceMatch[0] : null;
+        return { title, rawText: bodyText, price };
+      });
+
+      return {
+        url,
+        rawText: result.rawText,
+        title: result.title || undefined,
+        price: result.price,
+        currency: result.price ? 'USD' : null,
+        fetchedAt: Date.now(),
+      };
+    } finally {
+      await browser.close();
+    }
+  },
 
   async scrape(search: ResolvedSearch, config: ScraperConfig): Promise<RawListing[]> {
     const url = `https://www.audiogon.com/listings?q=${encodeURIComponent(search.query)}`;

@@ -1,7 +1,9 @@
 import { logger } from '../utils/logger.js';
 import {
   createBrowser,
+  genericFetchDetail,
   randomDelay,
+  type DetailPage,
   type Scraper,
   type ScraperConfig,
   type RawListing,
@@ -38,6 +40,16 @@ const SITE_ID = 'usaudiomart';
 export const usaudiomartScraper: Scraper = {
   id: SITE_ID,
   needsHeaded: false,
+
+  /**
+   * USAM detail pages are simple server-rendered HTML. The genericFetchDetail
+   * body-innerText path captures the full description, price, category,
+   * state, and seller info without needing bespoke selectors. Stealth still
+   * required for USAM's bot check.
+   */
+  async fetchDetail(url: string, config: ScraperConfig): Promise<DetailPage> {
+    return genericFetchDetail(url, config, { waitMs: 1500 });
+  },
 
   async scrape(search: ResolvedSearch, config: ScraperConfig): Promise<RawListing[]> {
     const url = `https://www.usaudiomart.com/search.php?keywords=${encodeURIComponent(search.query)}`;
