@@ -2,6 +2,7 @@ import yaml from 'js-yaml';
 import { logger } from './utils/logger.js';
 import type { PriceReference } from './config.js';
 import type { SeenItemRow, Verdict } from './db.js';
+import type { DetailPage } from './scrapers/base.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -249,4 +250,171 @@ export function chunk<T>(arr: T[], n: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
   return out;
+}
+
+// ───────────────────────── Pass-2: detail drill-down ─────────────────────────
+
+const SYSTEM_PROMPT_DETAIL = `You are a marketplace deal evaluator running a SECOND-PASS REVIEW on a listing that a first-pass evaluator (working from card-level data only) flagged as a potential deal/steal/grail.
+
+You now have the FULL DETAIL PAGE content for this listing. Use it to CONFIRM, UPGRADE, or DOWNGRADE the first-pass verdict. You must cite specific evidence from the detail content in your reasoning.
+
+INPUT:
+1. The REFERENCE section (same as pass 1): item definition, pricing tiers (USD), shipping_notes, and notes (including BUYER PREFERENCES if any).
+2. The PASS-1 VERDICT: what the card-level evaluator concluded and why.
+3. The DETAIL PAGE: full title, price, structured extras (mileage/color/drive/condition/specifics/etc.), and body text.
+
+OUTPUT SCHEMA (single JSON object — same as pass 1):
+{
+  "relevant": true,
+  "deal_tier": "steal|deal|fair|overpriced|irrelevant",
+  "confidence": 0.0,
+  "extracted_price": null,
+  "extracted_currency": "USD|EUR|GBP|...",
+  "reasoning": "1-3 sentences citing SPECIFIC evidence from the detail page",
+  "red_flags": [],
+  "positive_signals": [],
+  "grail_match": false
+}
+
+ALL THE PASS-1 RULES STILL APPLY:
+- USD conversion for extracted_price (reference tiers are USD)
+- Shipping_notes geographic constraints
+- Exceptional-bargain exception (strict: ratio ≤ 0.6 vs typical used)
+- Tier definitions (steal/deal/fair/overpriced/irrelevant)
+
+NEW PASS-2 RULES:
+- Re-check the reference's \`notes\` section line by line against the detail. For vehicles, this means actually checking mileage, color, drivetrain (RWD vs AWD/4MATIC), title status, service history, known-issue markers. For speakers, condition, pair-vs-single, tweeter/driver damage. CITE what you found or didn't find.
+- If the reference has BUYER PREFERENCES (e.g. "Black strongly preferred, RWD not AWD"), apply them as tier modifiers:
+  - Listing matches preferences → confirm or upgrade
+  - Listing violates preferences → downgrade a tier (deal → fair, steal → deal)
+  - Listing has hard red flags (salvage/rebuilt title, over max_mileage, obvious fraud indicators) → downgrade to "irrelevant" or "overpriced"
+- If the detail page is thin, a Cloudflare challenge, a dealer template with no real info, or the seller description is too vague to verify the reference's notes, DOWNGRADE to "fair" with confidence ≤ 0.4. Do NOT confirm on insufficient information.
+- You may UPGRADE a pass-1 verdict if the detail page reveals a better deal than the card suggested (e.g. the card showed only a starting bid, but the detail reveals a Buy It Now at a lower price). Rare, but allowed.
+- Pass-2 is a revision, not a re-evaluation from scratch. The pass-1 verdict is your baseline — explain whether you're confirming, upgrading, or downgrading, and why.
+
+OUTPUT:
+- Respond ONLY with the JSON object, no markdown fences, no preamble.`;
+
+function buildDetailPrompt(
+  reference: PriceReference,
+  listing: SeenItemRow,
+  pass1: Verdict,
+  detail: DetailPage,
+): string {
+  const refYaml = yaml.dump(reference);
+  const cardPrice =
+    listing.price != null ? `${listing.currency ?? ''}${listing.price}`.trim() : '(unknown)';
+  const extrasBlock = detail.extras && Object.keys(detail.extras).length
+    ? Object.entries(detail.extras)
+        .map(([k, v]) => `  ${k}: ${v}`)
+        .join('\n')
+    : '(none)';
+
+  return `=== REFERENCE ===
+${refYaml}
+
+=== PASS-1 VERDICT (card-level) ===
+deal_tier: ${pass1.deal_tier}
+grail_match: ${pass1.grail_match}
+confidence: ${pass1.confidence}
+extracted_price (USD): ${pass1.extracted_price ?? '(null)'}
+reasoning: ${pass1.reasoning}
+red_flags: ${pass1.red_flags.join('; ') || '(none)'}
+positive_signals: ${pass1.positive_signals.join('; ') || '(none)'}
+
+=== CARD-LEVEL DATA (what pass 1 saw) ===
+Source: ${listing.site}
+Title: ${listing.title ?? ''}
+Price (raw): ${cardPrice}
+Currency: ${listing.currency ?? '(unknown)'}
+Location: ${listing.location ?? ''}
+URL: ${listing.url}
+
+=== DETAIL PAGE (what you see now) ===
+URL: ${detail.url}
+Title: ${detail.title ?? '(none)'}
+Price: ${detail.price ?? '(none)'}
+Location: ${detail.location ?? '(none)'}
+Structured extras:
+${extrasBlock}
+
+Body:
+${detail.rawText}
+
+Revise the pass-1 verdict. Confirm, upgrade, or downgrade. Cite specific evidence from the detail page. If the detail is thin/challenge-page/unverifiable, downgrade to fair with low confidence.`;
+}
+
+function parseSingleEvaluation(raw: string): LLMEvaluation {
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
+  }
+  const parsed = JSON.parse(cleaned);
+  // evaluateDetail returns a single object, not {evaluations: [...]}. Accept either shape.
+  const source = parsed && Array.isArray(parsed.evaluations) && parsed.evaluations.length > 0
+    ? parsed.evaluations[0]
+    : parsed;
+  if (!source || typeof source !== 'object') {
+    throw new Error('LLM detail response is not an object');
+  }
+  return {
+    listing_index: 0,
+    relevant: Boolean(source.relevant),
+    deal_tier: (source.deal_tier ?? 'irrelevant') as Verdict['deal_tier'],
+    confidence: Number(source.confidence ?? 0),
+    extracted_price: source.extracted_price != null ? Number(source.extracted_price) : null,
+    reasoning: String(source.reasoning ?? ''),
+    red_flags: Array.isArray(source.red_flags) ? source.red_flags.map(String) : [],
+    positive_signals: Array.isArray(source.positive_signals)
+      ? source.positive_signals.map(String)
+      : [],
+    grail_match: Boolean(source.grail_match),
+  };
+}
+
+export async function evaluateDetail(
+  reference: PriceReference,
+  listing: SeenItemRow,
+  pass1: Verdict,
+  detail: DetailPage,
+  opts: EvaluateOptions = {},
+): Promise<Verdict> {
+  if (opts.dryRun) {
+    // Echo pass-1 verbatim in dry-run mode so orchestrator plumbing can be
+    // tested without LLM spend.
+    return {
+      ...pass1,
+      reasoning: `[dry-run pass-2] confirming pass-1: ${pass1.reasoning}`,
+    };
+  }
+
+  const user = buildDetailPrompt(reference, listing, pass1, detail);
+  const primary = process.env.OPENROUTER_MODEL ?? 'deepseek/deepseek-chat-v3.1';
+  const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'z-ai/glm-4.7-flash';
+
+  let raw: string | null = null;
+  try {
+    raw = await callOpenRouter(primary, SYSTEM_PROMPT_DETAIL, user);
+  } catch (err) {
+    logger.warn({ err, model: primary, listingId: listing.id }, 'pass-2 primary failed, retrying');
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      raw = await callOpenRouter(primary, SYSTEM_PROMPT_DETAIL, user);
+    } catch (err2) {
+      logger.warn({ err: err2, model: primary }, 'pass-2 retry failed, trying fallback');
+      raw = await callOpenRouter(fallback, SYSTEM_PROMPT_DETAIL, user);
+    }
+  }
+
+  const parsed = parseSingleEvaluation(raw);
+  return {
+    relevant: parsed.relevant,
+    deal_tier: parsed.deal_tier,
+    confidence: parsed.confidence,
+    extracted_price: parsed.extracted_price,
+    reasoning: parsed.reasoning,
+    red_flags: parsed.red_flags,
+    positive_signals: parsed.positive_signals,
+    grail_match: parsed.grail_match,
+  };
 }

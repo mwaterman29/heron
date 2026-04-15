@@ -31,8 +31,16 @@ export interface SeenItemRow {
   times_seen: number;
   evaluated: number;
   is_deal: number;
+  /** Final deal tier (pass-2-overridden if pass-2 ran, else pass-1). */
   deal_tier: string | null;
+  /** Final reasoning (pass-2 if ran, else pass-1). */
   llm_reasoning: string | null;
+  /** Pass-1 tier, preserved for audit when pass-2 runs. */
+  pass1_tier: string | null;
+  /** Pass-1 reasoning, preserved for audit when pass-2 runs. */
+  pass1_reasoning: string | null;
+  /** 1 if the detail page was fetched and evaluated. */
+  detail_fetched: number;
   notified: number;
   created_at: number;
 }
@@ -108,6 +116,9 @@ function addColumnIfMissing(table: string, column: string, ddl: string) {
 }
 addColumnIfMissing('seen_items', 'currency', 'TEXT');
 addColumnIfMissing('seen_items', 'price_usd', 'REAL');
+addColumnIfMissing('seen_items', 'pass1_tier', 'TEXT');
+addColumnIfMissing('seen_items', 'pass1_reasoning', 'TEXT');
+addColumnIfMissing('seen_items', 'detail_fetched', 'INTEGER DEFAULT 0');
 
 const stmts = {
   get: db.prepare('SELECT * FROM seen_items WHERE id = ?'),
@@ -130,13 +141,28 @@ const stmts = {
   insertPriceHistory: db.prepare(`
     INSERT INTO price_history (item_id, price, observed_at) VALUES (?, ?, ?)
   `),
-  markEvaluated: db.prepare(`
+  // Pass-1: card-level evaluation. Writes both the final tier (so orchestrators
+  // that don't run pass-2 still get a verdict) AND the pass1_* audit columns.
+  markPass1: db.prepare(`
     UPDATE seen_items
     SET evaluated = 1,
         is_deal = @is_deal,
         deal_tier = @deal_tier,
         llm_reasoning = @reasoning,
+        pass1_tier = @deal_tier,
+        pass1_reasoning = @reasoning,
         price_usd = @price_usd
+    WHERE id = @id
+  `),
+  // Pass-2: detail-level revision. Overwrites deal_tier/llm_reasoning with
+  // the revised verdict but leaves pass1_tier/pass1_reasoning intact.
+  markPass2: db.prepare(`
+    UPDATE seen_items
+    SET is_deal = @is_deal,
+        deal_tier = @deal_tier,
+        llm_reasoning = @reasoning,
+        detail_fetched = 1,
+        price_usd = COALESCE(@price_usd, price_usd)
     WHERE id = @id
   `),
   markNotified: db.prepare(`UPDATE seen_items SET notified = 1 WHERE id = ?`),
@@ -197,16 +223,50 @@ export function upsertListing(searchId: string, listing: RawListing): UpsertResu
   return { status: 'reseen', row, priceChanged, priceDropPct };
 }
 
-export function markEvaluated(itemId: string, verdict: Verdict): void {
-  const isDeal = verdict.deal_tier === 'steal' || verdict.deal_tier === 'deal' || verdict.grail_match;
-  stmts.markEvaluated.run({
+function isDealVerdict(verdict: Verdict): boolean {
+  return (
+    verdict.deal_tier === 'steal' ||
+    verdict.deal_tier === 'deal' ||
+    verdict.grail_match
+  );
+}
+
+/**
+ * Write the card-level (pass-1) verdict. Seeds both the final verdict
+ * columns AND the pass1_* audit columns — if pass-2 never runs, the
+ * orchestrator still sees a complete verdict on the row.
+ */
+export function markPass1(itemId: string, verdict: Verdict): void {
+  stmts.markPass1.run({
     id: itemId,
-    is_deal: isDeal ? 1 : 0,
+    is_deal: isDealVerdict(verdict) ? 1 : 0,
     deal_tier: verdict.deal_tier,
     reasoning: verdict.reasoning,
     price_usd: verdict.extracted_price,
   });
 }
+
+/**
+ * Write the detail-level (pass-2) verdict. Overwrites the final columns
+ * but preserves pass1_tier/pass1_reasoning so the original verdict remains
+ * auditable. Sets detail_fetched = 1 so we can filter listings that went
+ * through the full drill-down flow.
+ */
+export function markPass2(itemId: string, verdict: Verdict): void {
+  stmts.markPass2.run({
+    id: itemId,
+    is_deal: isDealVerdict(verdict) ? 1 : 0,
+    deal_tier: verdict.deal_tier,
+    reasoning: verdict.reasoning,
+    price_usd: verdict.extracted_price,
+  });
+}
+
+/**
+ * Back-compat alias for existing call sites. New code should call markPass1.
+ * @deprecated use markPass1
+ */
+export const markEvaluated = markPass1;
 
 export function markNotified(itemId: string): void {
   stmts.markNotified.run(itemId);
