@@ -89,6 +89,57 @@ references:
       rare enough that international listings should still be flagged if they
       match grail criteria, so we can at least evaluate.
 
+  # ── Drop+Invyr Holy Panda ──────────────────────────────
+
+  - id: holy-panda
+    name: "Drop+Invyr Holy Panda (original)"
+    type: switch
+    category: keyboards
+    query: "holy panda"
+    sites:
+      - mechmarket
+      - ebay
+    site_overrides:
+      ebay:
+        query: "drop invyr holy panda"
+    # Pricing is per-switch. The LLM should normalize any per-lot price
+    # (e.g. "$55 for 70x") to per-switch for comparison.
+    msrp: 1.00            # original retail per switch (long OOP)
+    fair_used: 1.20       # per switch — scarce OOP item, willing to pay retail
+    deal_price: 1.00      # per switch — would buy immediately
+    steal_price: 0.60     # per switch — almost certainly fakes or wrong model
+    shipping_notes: |
+      Switches are small and light — US shipping is cheap ($4-5 USPS First
+      Class). Continental US and Canada both fine. International: acceptable
+      if total landed cost per switch still meets deal_price.
+    notes: |
+      CRITICAL: MUST be the original Drop+Invyr Holy Panda, NOT the mass-
+      produced Drop Holy Panda X (which is a completely different switch
+      with a different stem/housing). The originals are out of production
+      since ~2020 and increasingly rare.
+
+      HOW TO IDENTIFY:
+      - Original: "Drop + Invyr Holy Panda" branding, sometimes just "Holy
+        Panda." Sold in packs of 70/90/110 in a white cardboard box.
+      - Holy Panda X: "Drop Holy Panda X" branding, currently in production,
+        different color stem (more orange). These are NOT desirable.
+      - Fakes/clones (Glorious Panda, BSUN, Yok, etc.) are also not
+        desirable — must be the genuine Drop+Invyr originals.
+
+      QUANTITY: need 70+ switches (one full 65% board). Prefer 70 or 90
+      packs. A lot of <70 is not useful unless the per-switch price is
+      exceptional enough to justify buying partials.
+
+      CONDITION:
+      - Stock (unmodified) strongly preferred.
+      - Lubed is acceptable if it's a quality lube job (Tribosys 3203/3204
+        or Krytox 205g0). Poorly lubed = worse than stock.
+      - Desoldered is fine if they weren't over-heated.
+      - Filmed (switch films added) is fine, slight plus.
+
+      On mechmarket, prices are typically listed as total-for-lot (e.g.
+      "$55 shipped for 70x"). Normalize to per-switch for tier comparison.
+
   # ── W211 E500 ─────────────────────────────────────────
 
   - id: w211-e500
