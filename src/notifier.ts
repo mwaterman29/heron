@@ -102,8 +102,86 @@ export class DiscordNotifier implements Notifier {
   }
 }
 
+/**
+ * Sends deal notifications as Discord DMs via a bot. Requires:
+ *   DISCORD_BOT_TOKEN — the bot token from Developer Portal
+ *   DISCORD_USER_ID   — your personal Discord user snowflake ID
+ *
+ * The bot must share at least one server with the user or Discord
+ * blocks the DM (error 50278).
+ */
+export class DiscordDMNotifier implements Notifier {
+  private dmChannelId: string | null = null;
+
+  constructor(
+    private botToken: string,
+    private userId: string,
+  ) {}
+
+  private async ensureDMChannel(): Promise<string> {
+    if (this.dmChannelId) return this.dmChannelId;
+
+    const res = await fetch('https://discord.com/api/v10/users/@me/channels', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${this.botToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ recipient_id: this.userId }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Discord DM channel creation ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as { id: string };
+    this.dmChannelId = data.id;
+    return this.dmChannelId;
+  }
+
+  async notify(payload: DealPayload): Promise<void> {
+    const channelId = await this.ensureDMChannel();
+    const embed = buildEmbed(payload);
+    const content = payload.verdict.grail_match ? '💎 **GRAIL MATCH** — check this immediately' : undefined;
+
+    const res = await fetch(
+      `https://discord.com/api/v10/channels/${channelId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bot ${this.botToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content, embeds: [embed] }),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Discord DM send ${res.status}: ${body.slice(0, 200)}`);
+    }
+  }
+}
+
+/**
+ * Pick the best available notifier:
+ *   1. DiscordDMNotifier  — if DISCORD_BOT_TOKEN + DISCORD_USER_ID set
+ *   2. DiscordNotifier    — if DISCORD_WEBHOOK_URL set
+ *   3. ConsoleNotifier    — fallback
+ */
 export function pickNotifier(forceConsole: boolean): Notifier {
+  if (forceConsole) return new ConsoleNotifier();
+
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  const userId = process.env.DISCORD_USER_ID;
+  if (botToken && userId) {
+    logger.info('using Discord DM notifier');
+    return new DiscordDMNotifier(botToken, userId);
+  }
+
   const webhook = process.env.DISCORD_WEBHOOK_URL;
-  if (!forceConsole && webhook) return new DiscordNotifier(webhook);
+  if (webhook) {
+    logger.info('using Discord webhook notifier');
+    return new DiscordNotifier(webhook);
+  }
+
   return new ConsoleNotifier();
 }
