@@ -90,6 +90,136 @@ references:
       rare enough that international listings should still be flagged if they
       match grail criteria, so we can at least evaluate.
 
+  # ── Category Hunt: End-game IEMs ───────────────────────
+
+  - id: endgame-iems
+    name: "High-end tribrid IEMs"
+    type: category_hunt
+    category: audio
+    queries:
+      - "EST IEM"
+      - "tribrid IEM"
+      - "empire ears"
+      - "elysian"
+      - "64audio"
+    sites:
+      - avexchange
+      - hifishark
+      - ebay
+      - usaudiomart
+    site_overrides:
+      ebay:
+        queries:
+          - "empire ears raven"
+          - "elysian annihilator"
+          - "64audio fourte"
+          - "unique melody MEST"
+      hifishark:
+        queries:
+          - "empire ears"
+          - "elysian annihilator"
+          - "64audio"
+          - "unique melody MEST"
+    shipping_notes: |
+      IEMs are tiny and light — US shipping is trivial ($5-8 USPS Priority).
+      International is acceptable if total landed cost still represents a
+      bargain. Canada always fine. EU/Asia acceptable for steals.
+    profile: |
+      Looking for high-end tribrid IEMs, preferably with EST (electrostatic)
+      drivers for fast treble transients. Primary use: electronic music with
+      rapid percussion — the speed advantage of ESTs matters here.
+
+      CURRENT REFERENCE: Unique Melody U4s. Love the tuning, want more
+      resolution and faster transient response. Tried Thieaudio Monarch Mk3
+      and loved the transparency — looking for that level of detail or better.
+
+      BUDGET: up to ~$2,500 used. Anything under $1,500 that's normally
+      $2,500+ new is a strong deal. Under $1,000 for a $2k+ IEM is a steal.
+
+      BRANDS/MODELS OF PARTICULAR INTEREST (not exhaustive — surface any
+      high-end tribrid that fits):
+      - Empire Ears Raven (~$3,400 new) — DD + 4BA + 4EST, very resolving
+      - Empire Ears Legend X / Odin — flagship, exceptional bass + detail
+      - Elysian Annihilator 2023 (~$3,300 new) — the transparency benchmark
+      - Elysian Pilgrim — more affordable entry from same house
+      - 64Audio Fourté / Fourté Noir (~$3,800 new) — tia driver, fast treble
+      - 64Audio U18s (~$3,000 new) — pure reference monitor, 18 BA
+      - 64Audio Trio — tribrid, good bass + detail balance
+      - Unique Melody MEST MkII/III (~$1,700 new) — bone conduction + EST,
+        same house sound as my U4s, natural upgrade path
+      - Subtonic Storm (~$2,500 new) — DD + 6BA + 2EST, fast transients
+      - FATfreq Grand Maestro — tribrid, known for bass and resolution
+      - Vision Ears VE8 / Erlkönig — ultra-high-end, incredible resolution
+
+      NOT INTERESTED IN:
+      - Single-DD budget IEMs (Moondrop Aria, Truthear, etc.)
+      - Chi-fi under $500 new (KZ, CCA, TRN, etc.)
+      - Pure BA sets without EST/DD (unless it's a known flagship like U18s)
+      - Heavily used / damaged units (cosmetic wear OK, driver issues not OK)
+
+      CONDITION: must be complete with case + tips. Aftermarket cable OK.
+      Cosmetic wear acceptable. No channel imbalance or driver flex issues.
+
+      KEY JUDGMENT: Is this item underpriced relative to its own typical
+      used market value? The "flip test" — could the buyer resell for more
+      than the asking price? If yes, always surface it.
+
+  # ── Category Hunt: Bookshelf Speakers ─────────────────
+
+  - id: bookshelf-speakers
+    name: "Quality bookshelf speakers"
+    type: category_hunt
+    category: audio
+    queries:
+      - "bookshelf speakers"
+      - "wharfedale denton"
+      - "monitor audio silver"
+      - "monitor audio gold"
+      - "kef ls50"
+    sites:
+      - hifishark
+      - usaudiomart
+      - ebay
+      - craigslist
+      - fbmp
+    allowed_states: [MA, NH, RI, CT, ME, VT, NY]
+    shipping_notes: |
+      Speakers are bulky and fragile. For FBMP/Craigslist: local pickup only,
+      within ~100mi of Boston. For shipped sources (USAM, eBay, HiFi Shark):
+      US-based only. International listings are irrelevant for speakers —
+      shipping + damage risk eliminates any deal.
+    profile: |
+      Looking for quality bookshelf/standmount speakers in the $200-$800
+      used range. Interested in speakers that are well-regarded, hold their
+      value, and are never a bad buy at the right price.
+
+      MODELS OF PARTICULAR INTEREST:
+      - Focal Aria 906 (~$1,300 new, ~$700 used) — already tracking separately
+        but surface if dramatically underpriced here too
+      - Wharfedale Denton 85th Anniversary (~$700 new, ~$350-400 used)
+      - Wharfedale Linton (~$1,500 new, ~$800-900 used) — technically a
+        larger standmount, still fits
+      - Monitor Audio Silver 50/100 7G (~$600-1,000 new, ~$350-500 used)
+      - Monitor Audio Gold 100 5G (~$2,000 new, ~$900-1,100 used)
+      - KEF LS50 Meta (~$1,600 new, ~$800-1,000 used)
+      - KEF LS50 (original, ~$500 used) — the classic, a steal under $350
+      - Elac Debut Reference DBR62 (~$500 new, ~$250 used)
+      - Q Acoustics Concept 300 (~$2,500 new, ~$1,200 used)
+      - Dynaudio Evoke 10/20 (~$1,000-1,600 new, ~$500-800 used)
+
+      NOT INTERESTED IN:
+      - Home theater satellite speakers / soundbar replacements
+      - Bluetooth/powered speakers (Edifier, Kanto, etc.)
+      - Vintage speakers unless exceptionally desirable (JBL L100, AR, etc.)
+      - Speakers without grilles available or with obvious driver damage
+      - Single speakers (need pairs)
+
+      CONDITION: pairs only. Cosmetic wear OK. Grilles preferred but not
+      required. Must be functional — no blown drivers or rattling.
+
+      KEY JUDGMENT: Is this pair underpriced relative to its own typical
+      used market value? Surface anything that passes the flip test.
+
   # ── Drop+Invyr Holy Panda ──────────────────────────────
 
   - id: holy-panda

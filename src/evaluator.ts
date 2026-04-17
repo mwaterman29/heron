@@ -71,6 +71,61 @@ TIER DEFINITIONS (all USD-to-USD):
 OUTPUT:
 - Respond ONLY with the JSON object, no markdown fences, no preamble.`;
 
+const SYSTEM_PROMPT_CATEGORY_HUNT = `You are a marketplace deal evaluator in CATEGORY HUNT mode. Unlike the standard mode where you compare listings against a single reference item with fixed pricing tiers, here you evaluate each listing against ITS OWN typical used market value.
+
+You will receive:
+1. A BUYER PROFILE describing what the buyer is looking for: their taste preferences, budget range, brands/models of interest, and exclusions.
+2. Optional SHIPPING CONSTRAINTS and ADDITIONAL NOTES.
+3. One or more LISTING entries scraped from marketplace sites.
+
+For each listing, respond with a JSON object in this exact schema:
+{
+  "evaluations": [
+    {
+      "listing_index": 0,
+      "relevant": true,
+      "deal_tier": "steal|deal|fair|overpriced|irrelevant",
+      "confidence": 0.0,
+      "extracted_price": null,
+      "extracted_currency": "USD|EUR|GBP|...",
+      "reasoning": "1-3 sentence explanation",
+      "red_flags": [],
+      "positive_signals": [],
+      "grail_match": false
+    }
+  ]
+}
+
+HOW TO EVALUATE EACH LISTING:
+
+1. RELEVANCE CHECK: Does this listing match the buyer's profile? Consider:
+   - Is the item in the right category/type?
+   - Does it match the buyer's stated brands/models of interest?
+   - Does it violate any exclusions in the profile?
+   - If the item doesn't match any stated interest AND isn't a dramatically underpriced surprise find, mark it irrelevant.
+
+2. MARKET VALUE ESTIMATION (critical): For each RELEVANT listing:
+   - Estimate the item's typical USED market value in USD (call this U).
+   - You must state U in your reasoning. If you're not confident in U, say so and set confidence low.
+   - Common knowledge: use your training data about typical used prices on audiophile forums, eBay sold listings, Head-Fi classifieds, etc.
+
+3. DEAL ASSESSMENT: Compare the asking price (converted to USD) against U:
+   - "steal" = asking price ≤ 0.5 × U (50%+ below used market — exceptional bargain)
+   - "deal" = asking price ≤ 0.75 × U (25%+ below used market — genuinely good buy, the "flip test" passes: you could resell for more than you paid)
+   - "fair" = asking price between 0.75 × U and U (reasonable market price, no arbitrage)
+   - "overpriced" = asking price > U (above typical used market)
+   - State the ratio (asking/U) in your reasoning.
+
+4. PROFILE FIT BONUS: If the item is particularly well-suited to the buyer's stated preferences (e.g. they want ESTs and this tribrid has 4 ESTs; they want resolution and this model is known for it), mention this as a positive signal. A perfect-fit item at a fair price is worth surfacing; a poor-fit item even at a deal price may not be.
+
+5. FLIP TEST: Ask yourself: "Could the buyer resell this for more than the asking price?" If yes, that's a strong signal to surface it as deal/steal regardless of whether it's the buyer's exact target.
+
+CURRENCY: extracted_price MUST be in USD after conversion. All market value estimates (U) are in USD.
+
+SHIPPING: Respect any shipping constraints in the profile.
+
+OUTPUT: Respond ONLY with the JSON object, no markdown fences, no preamble.`;
+
 interface LLMEvaluation {
   listing_index: number;
   relevant: boolean;
@@ -83,9 +138,8 @@ interface LLMEvaluation {
   grail_match: boolean;
 }
 
-function buildUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
-  const refYaml = yaml.dump(reference);
-  const listingBlocks = listings.map((l, i) => {
+function formatListingBlocks(listings: SeenItemRow[]): string {
+  return listings.map((l, i) => {
     const priceStr =
       l.price != null
         ? `${l.currency ?? ''}${l.price}`.trim()
@@ -97,13 +151,28 @@ Currency (detected): ${l.currency ?? '(unknown)'}
 Location: ${l.location ?? ''}
 URL: ${l.url}
 Text: ${l.raw_text ?? ''}`;
-  });
+  }).join('\n\n');
+}
+
+function buildUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
+  const refYaml = yaml.dump(reference);
   return `=== REFERENCE ===
 ${refYaml}
 === LISTINGS ===
-${listingBlocks.join('\n\n')}
+${formatListingBlocks(listings)}
 
 Remember: extracted_price MUST be in USD. Compare USD-to-USD against the reference tiers. Respect shipping_notes if present.`;
+}
+
+function buildCategoryHuntUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
+  return `=== BUYER PROFILE ===
+${reference.profile ?? ''}
+
+${reference.shipping_notes ? `=== SHIPPING CONSTRAINTS ===\n${reference.shipping_notes}\n` : ''}${reference.notes ? `=== ADDITIONAL NOTES ===\n${reference.notes}\n` : ''}
+=== LISTINGS ===
+${formatListingBlocks(listings)}
+
+For each listing: estimate its typical used market value in USD, compare the asking price against that, and judge whether this is a genuine bargain worth surfacing given the buyer's profile.`;
 }
 
 /**
@@ -236,8 +305,14 @@ export async function evaluateBatch(
     return out;
   }
 
-  const system = SYSTEM_PROMPT;
-  const user = buildUserPrompt(reference, listings);
+  // Route to the category-hunt prompt when the reference has a profile
+  // field (no fixed pricing tiers — the LLM estimates each item's own
+  // used market value). Otherwise use the standard per-item prompt.
+  const isCategoryHunt = !!reference.profile;
+  const system = isCategoryHunt ? SYSTEM_PROMPT_CATEGORY_HUNT : SYSTEM_PROMPT;
+  const user = isCategoryHunt
+    ? buildCategoryHuntUserPrompt(reference, listings)
+    : buildUserPrompt(reference, listings);
 
   // Default primary flipped to DeepSeek 3.1 — in practice glm-4.7-flash was
   // slow (~2 min/batch) AND intermittently returned empty content on OpenRouter.

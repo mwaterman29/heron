@@ -73,6 +73,21 @@ export interface PriceReference {
    * If omitted, no state filtering is applied (all locations pass through).
    */
   allowed_states?: string[];
+
+  /**
+   * For type=category_hunt references: a free-text profile describing
+   * what the buyer is looking for, their taste, budget range, brands of
+   * interest, and what to exclude. The LLM evaluates each listing against
+   * its OWN typical used market value (not against fixed tiers) and uses
+   * this profile to judge fit + whether the price represents a genuine
+   * bargain worth surfacing.
+   *
+   * When `profile` is set, the evaluator uses a different system prompt
+   * that says "evaluate each listing against its own fair market value,
+   * filtered by the buyer's profile." The fixed-tier fields (msrp,
+   * fair_used, deal_price, steal_price) are ignored.
+   */
+  profile?: string;
 }
 
 export interface UserProfile {
