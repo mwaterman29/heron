@@ -19,6 +19,18 @@ export function normalizeUrl(raw: string): string {
       if (m) u.pathname = `/goto/${m[1]}`;
     }
 
+    // Facebook Marketplace listing URLs look like:
+    //   /marketplace/item/<numeric_id>/?ref=search&referral_code=...
+    // Strip query params for stable dedup — only the numeric ID matters.
+    if (u.hostname.endsWith('facebook.com')) {
+      const m = u.pathname.match(/^\/marketplace\/item\/(\d+)/);
+      if (m) {
+        u.pathname = `/marketplace/item/${m[1]}`;
+        u.search = '';
+        u.hash = '';
+      }
+    }
+
     // eBay listing URLs look like:
     //   /itm/<numeric_id>?itmmeta=...&hash=...&itmprp=...&_skw=...
     // Everything after the numeric id rotates per session. Keep only the
