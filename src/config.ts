@@ -65,6 +65,14 @@ export interface PriceReference {
   notes?: string;
   /** User-authored constraint about geography/shipping/landed-cost realities. */
   shipping_notes?: string;
+  /**
+   * Allowed US state codes for location-aware scrapers (FBMP, Craigslist).
+   * Listings whose location doesn't match any of these are dropped before
+   * hitting the DB or LLM. Saves tokens on obvious geographic rejects.
+   * Example: ['MA', 'NH', 'RI', 'CT'] for ~100mi radius from Boston.
+   * If omitted, no state filtering is applied (all locations pass through).
+   */
+  allowed_states?: string[];
 }
 
 export interface UserProfile {

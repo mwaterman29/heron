@@ -82,6 +82,27 @@ export function defaultScraperConfig(): ScraperConfig {
   };
 }
 
+/**
+ * Filter listings by allowed US state codes. Checks if the listing's
+ * location string ends with a 2-letter state code that's in the allowed
+ * set. Listings with no parseable state are kept (benefit of the doubt).
+ */
+export function filterByAllowedStates(
+  listings: RawListing[],
+  allowedStates: string[] | undefined,
+): RawListing[] {
+  if (!allowedStates || allowedStates.length === 0) return listings;
+  const allowed = new Set(allowedStates.map((s) => s.toUpperCase()));
+  return listings.filter((l) => {
+    if (!l.location) return true; // no location → keep
+    // Match trailing 2-letter state code: "Burlington, MA" → "MA"
+    // Also handles "US-MA" format from mechmarket/craigslist
+    const m = l.location.match(/\b([A-Z]{2})$/i) ?? l.location.match(/^US-([A-Z]{2})$/i);
+    if (!m) return true; // unparseable location → keep
+    return allowed.has(m[1].toUpperCase());
+  });
+}
+
 export class UnsupportedScraperError extends Error {
   constructor(siteId: string) {
     super(`No scraper registered for site '${siteId}'`);

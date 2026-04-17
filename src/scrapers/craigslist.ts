@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger.js';
 import {
   createBrowser,
+  filterByAllowedStates,
   randomDelay,
   type DetailPage,
   type Scraper,
@@ -276,19 +277,29 @@ export const craigslistScraper: Scraper = {
         },
       );
 
-      if (listings.length === 0) {
+      // Drop listings outside the allowed states (handles CL's "nearby" backfill
+      // from NY/NJ/etc. when local results are thin)
+      const filtered = filterByAllowedStates(listings, search.reference.allowed_states);
+      if (filtered.length < listings.length) {
+        logger.info(
+          { site: SITE_ID, searchId: search.id, dropped: listings.length - filtered.length },
+          'filtered out-of-area listings by allowed_states',
+        );
+      }
+
+      if (filtered.length === 0) {
         logger.warn(
           { site: SITE_ID, searchId: search.id, url },
-          'zero listings extracted — either no results or selectors stale',
+          'zero listings after filtering — either no results or selectors stale',
         );
       } else {
         logger.info(
-          { site: SITE_ID, searchId: search.id, count: listings.length },
+          { site: SITE_ID, searchId: search.id, count: filtered.length },
           'extracted listings',
         );
       }
 
-      return listings;
+      return filtered;
     } finally {
       await browser.close();
     }

@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger.js';
 import {
   createBrowser,
+  filterByAllowedStates,
   genericFetchDetail,
   randomDelay,
   type DetailPage,
@@ -171,19 +172,28 @@ export const fbmpScraper: Scraper = {
         },
       );
 
-      if (listings.length === 0) {
+      // Drop listings outside the allowed states before they hit the DB/LLM
+      const filtered = filterByAllowedStates(listings, search.reference.allowed_states);
+      if (filtered.length < listings.length) {
+        logger.info(
+          { site: SITE_ID, searchId: search.id, dropped: listings.length - filtered.length },
+          'filtered out-of-area listings by allowed_states',
+        );
+      }
+
+      if (filtered.length === 0) {
         logger.warn(
           { site: SITE_ID, searchId: search.id, url },
-          'zero listings extracted — FB may be blocking or no results',
+          'zero listings after filtering — FB may be blocking or no local results',
         );
       } else {
         logger.info(
-          { site: SITE_ID, searchId: search.id, count: listings.length },
+          { site: SITE_ID, searchId: search.id, count: filtered.length },
           'extracted listings',
         );
       }
 
-      return listings;
+      return filtered;
     } finally {
       await browser.close();
     }

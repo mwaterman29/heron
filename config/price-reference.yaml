@@ -10,6 +10,8 @@ references:
     type: bookshelf_speaker
     category: audio
     query: "focal aria 906"
+    # ~100mi radius from Boston for FBMP/Craigslist location filtering
+    allowed_states: [MA, NH, RI, CT, ME, VT, NY]
     sites:
       - hifishark
       - usaudiomart
@@ -40,9 +42,8 @@ references:
     name: "SVS SB-1000 / SB-12"
     type: subwoofer
     category: audio
-    # Default query is deliberately broad to catch generic "svs subwoofer"
-    # listings on sites that won't match model-specific strings.
     query: "svs subwoofer"
+    allowed_states: [MA, NH, RI, CT, ME, VT, NY]
     sites:
       - hifishark
       - usaudiomart
@@ -146,6 +147,8 @@ references:
     name: "2003-2006 Mercedes-Benz E500 (W211)"
     type: vehicle
     category: auto
+    # Wider radius for vehicles — worth driving further for a good deal
+    allowed_states: [MA, NH, RI, CT, ME, VT, NY, NJ, PA, MD, VA, DE]
     queries:
       - "E500 W211"
       - "Mercedes E500"
