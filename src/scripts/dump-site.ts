@@ -1,4 +1,5 @@
-import { db } from '../db.js';
+import { getDb } from '../db.js';
+const db = getDb();
 
 const site = process.argv[2] ?? 'usaudiomart';
 const rows = db

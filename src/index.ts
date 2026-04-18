@@ -1,7 +1,9 @@
 import 'dotenv/config';
+import { resolve } from 'node:path';
 import { logger } from './utils/logger.js';
 import { loadConfig, type ResolvedSearch, type PriceReference } from './config.js';
 import {
+  initDb,
   markNotified,
   markPass1,
   markPass2,
@@ -20,6 +22,9 @@ interface CliFlags {
   search?: string;
   site?: string;
   scraperOnly: boolean;
+  configDir: string;
+  runMode: 'full' | 'dry';
+  verbose: boolean;
 }
 
 function parseFlags(argv: string[]): CliFlags {
@@ -27,6 +32,9 @@ function parseFlags(argv: string[]): CliFlags {
     dryRunLLM: false,
     consoleNotify: false,
     scraperOnly: false,
+    configDir: process.cwd(),
+    runMode: 'full',
+    verbose: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -47,7 +55,21 @@ function parseFlags(argv: string[]): CliFlags {
       case '--site':
         flags.site = argv[++i];
         break;
+      case '--config-dir':
+        flags.configDir = resolve(argv[++i]);
+        break;
+      case '--run-mode':
+        flags.runMode = argv[++i] as 'full' | 'dry';
+        break;
+      case '--verbose':
+        flags.verbose = true;
+        break;
     }
+  }
+  // --run-mode dry is syntactic sugar for --dry-run-llm + --console-notify
+  if (flags.runMode === 'dry') {
+    flags.dryRunLLM = true;
+    flags.consoleNotify = true;
   }
   return flags;
 }
@@ -69,9 +91,29 @@ function collectDeal(
 
 async function main() {
   const flags = parseFlags(process.argv.slice(2));
+
+  // If custom config dir, reload .env from there (overrides CWD .env values)
+  if (flags.configDir !== process.cwd()) {
+    const dotenv = await import('dotenv');
+    dotenv.config({ path: resolve(flags.configDir, '.env'), override: true });
+  }
+
+  if (flags.verbose) logger.level = 'debug';
+
+  initDb(flags.configDir);
+
+  // --- Run counters for JSON summary ---
+  const runStart = Date.now();
+  let searchesRun = 0;
+  let listingsScraped = 0;
+  let newListings = 0;
+  let dealsFound = 0;
+  let notificationsSent = 0;
+  const errors: string[] = [];
+
   logger.info({ flags, registered: listRegisteredSites() }, 'deal-hunter starting');
 
-  const { searches } = loadConfig();
+  const { searches } = loadConfig(flags.configDir);
   const scraperConfig = defaultScraperConfig();
 
   const selected = searches.filter((s) => {
@@ -82,6 +124,7 @@ async function main() {
 
   if (selected.length === 0) {
     logger.warn('no searches matched filters — exiting');
+    emitSummary({ runStart, searchesRun, listingsScraped, newListings, dealsFound, notificationsSent, errors });
     return;
   }
 
@@ -95,17 +138,21 @@ async function main() {
       continue;
     }
 
+    searchesRun++;
     let listings;
     try {
       listings = await scraper.scrape(search, scraperConfig);
     } catch (err) {
       logger.error({ err, searchId: search.id, site: search.site }, 'scraper failed');
+      errors.push(`scraper ${search.site}/${search.id}: ${err}`);
       continue;
     }
 
+    listingsScraped += listings.length;
     for (const raw of listings) {
       const result = upsertListing(search.id, raw);
       if (result.status === 'new') {
+        newListings++;
         const list = queueByRef.get(search.reference_id) ?? [];
         list.push({ listing: result.row, reference: search.reference });
         queueByRef.set(search.reference_id, list);
@@ -126,6 +173,7 @@ async function main() {
     let total = 0;
     for (const items of queueByRef.values()) total += items.length;
     logger.info({ total }, 'scraper-only mode — skipping evaluation');
+    emitSummary({ runStart, searchesRun, listingsScraped, newListings, dealsFound, notificationsSent, errors });
     return;
   }
 
@@ -288,6 +336,7 @@ async function main() {
   }
 
   // --- End-of-run digest: sort by tier, cap at 12, resolve redirects, send ---
+  dealsFound = digest.length;
   if (digest.length > 0) {
     logger.info({ total: digest.length }, 'preparing digest notification');
     const { payloads, resolvedUrls } = await prepareDigest(digest, 12);
@@ -301,15 +350,43 @@ async function main() {
         }
       }
       for (const p of payloads) markNotified(p.listing.id);
+      notificationsSent = payloads.length;
       logger.info({ sent: payloads.length }, 'digest sent');
     } catch (err) {
       logger.error({ err }, 'digest notification failed');
+      errors.push(`digest notification: ${err}`);
     }
   } else {
     logger.info('no deals found this run');
   }
 
   logger.info('deal-hunter run complete');
+  emitSummary({ runStart, searchesRun, listingsScraped, newListings, dealsFound, notificationsSent, errors });
+}
+
+interface SummaryCounters {
+  runStart: number;
+  searchesRun: number;
+  listingsScraped: number;
+  newListings: number;
+  dealsFound: number;
+  notificationsSent: number;
+  errors: string[];
+}
+
+function emitSummary(c: SummaryCounters): void {
+  const summary = {
+    status: c.errors.length === 0 ? 'success' : 'partial',
+    timestamp: new Date().toISOString(),
+    searches_run: c.searchesRun,
+    listings_scraped: c.listingsScraped,
+    new_listings: c.newListings,
+    deals_found: c.dealsFound,
+    notifications_sent: c.notificationsSent,
+    errors: c.errors,
+    duration_ms: Date.now() - c.runStart,
+  };
+  process.stdout.write(`\n__DEAL_HUNTER_SUMMARY__${JSON.stringify(summary)}\n`);
 }
 
 main().catch((err) => {

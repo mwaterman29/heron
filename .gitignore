@@ -9,3 +9,12 @@ logs/
 # Legacy: local scraper-probe dumps (now written to logs/, kept for safety)
 probe-*.html
 probe-*.json
+
+# Tauri / Rust build output
+app/src-tauri/target/
+app/src-tauri/gen/
+app/dev-sidecar/target/
+
+# Sidecar binaries (built from source, not tracked)
+app/src-tauri/binaries/*.exe
+app/src-tauri/binaries/*.bat

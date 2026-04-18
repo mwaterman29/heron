@@ -1,4 +1,5 @@
-import { db } from '../db.js';
+import { getDb } from '../db.js';
+const db = getDb();
 
 const total = db
   .prepare("SELECT COUNT(*) as c FROM seen_items WHERE site = 'craigslist'")

@@ -1,4 +1,5 @@
-import { db } from '../db.js';
+import { getDb } from '../db.js';
+const db = getDb();
 
 const pattern = process.argv[2] ?? 'SB-3000';
 const rows = db

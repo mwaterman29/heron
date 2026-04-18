@@ -1,4 +1,5 @@
-import { db } from '../db.js';
+import { getDb } from '../db.js';
+const db = getDb();
 
 const searchId = process.argv[2] ?? 'focal-aria-906-hifishark';
 
