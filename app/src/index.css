@@ -5,8 +5,3 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-
-html, body, #root {
-  min-height: 100vh;
-  background: #0a0a0c;
-}

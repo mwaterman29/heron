@@ -43,6 +43,9 @@ export interface SeenItemRow {
   detail_fetched: number;
   notified: number;
   created_at: number;
+  /** Triage state: new | followed | rejected | purchased | lost */
+  listing_state: string | null;
+  thumbnail_url: string | null;
 }
 
 export interface Verdict {
@@ -146,16 +149,19 @@ CREATE TABLE IF NOT EXISTS price_history (
   addColumnIfMissing('seen_items', 'pass1_tier', 'TEXT');
   addColumnIfMissing('seen_items', 'pass1_reasoning', 'TEXT');
   addColumnIfMissing('seen_items', 'detail_fetched', 'INTEGER DEFAULT 0');
+  // listing_state tracks triage workflow: new | followed | rejected | purchased | lost
+  addColumnIfMissing('seen_items', 'listing_state', "TEXT DEFAULT 'new'");
+  addColumnIfMissing('seen_items', 'thumbnail_url', 'TEXT');
 
   stmts = {
     get: db.prepare('SELECT * FROM seen_items WHERE id = ?'),
     insert: db.prepare(`
       INSERT INTO seen_items (
         id, site, search_id, title, price, currency, url, location, raw_text,
-        first_seen_at, last_seen_at, times_seen, created_at
+        thumbnail_url, first_seen_at, last_seen_at, times_seen, created_at
       ) VALUES (
         @id, @site, @search_id, @title, @price, @currency, @url, @location, @raw_text,
-        @now, @now, 1, @now
+        @thumbnail_url, @now, @now, 1, @now
       )
     `),
     touch: db.prepare(`
@@ -231,6 +237,7 @@ export function upsertListing(searchId: string, listing: RawListing): UpsertResu
       url: listing.url,
       location: listing.location,
       raw_text: listing.rawText,
+      thumbnail_url: listing.thumbnailUrl,
       now,
     });
     if (price != null) s.insertPriceHistory.run(id, price, now);

@@ -103,6 +103,18 @@ pub fn get_recent_deals(app: AppHandle, limit: Option<u32>) -> Result<Vec<DealRo
 }
 
 #[tauri::command]
+pub fn get_queue(app: AppHandle) -> Result<Vec<DealRow>, String> {
+    let state = app.state::<AppState>();
+    db::queue(&state.config_dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_listing_state(app: AppHandle, id: String, state: String) -> Result<(), String> {
+    let app_state = app.state::<AppState>();
+    db::set_listing_state(&app_state.config_dir, &id, &state).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_history(app: AppHandle, filter: Option<HistoryFilter>) -> Result<Vec<DealRow>, String> {
     let state = app.state::<AppState>();
     db::history(&state.config_dir, filter.unwrap_or_default()).map_err(|e| e.to_string())

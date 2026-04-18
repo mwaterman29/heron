@@ -2,77 +2,128 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { SourceStat } from '../types';
 import { SCRAPER_META } from '../types';
-import { formatTime } from '../components/Pills';
+import { formatTime, SourceIcon } from '../components/Pills';
 
 export function Sources() {
   const [stats, setStats] = useState<SourceStat[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getSourceStats().then(setStats).catch((e) => setError(String(e)));
+    api
+      .getSourceStats()
+      .then(setStats)
+      .catch((e) => setError(String(e)));
   }, []);
 
+  const entries = Object.entries(SCRAPER_META);
+
   return (
-    <div>
-      <div className="panel-header">
+    <>
+      <div className="page-header">
         <div>
-          <h2>Sources</h2>
-          <div className="subtitle">The 8 marketplace scrapers. Read-only — defined in code.</div>
+          <div className="page-title">Sources</div>
+          <div className="page-subtitle">
+            {entries.length} scrapers · defined in code, not editable
+          </div>
         </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="stack" style={{ gap: 10 }}>
-        {Object.entries(SCRAPER_META).map(([site, meta]) => {
+      <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+        {entries.map(([site, meta], i) => {
           const stat = stats.find((s) => s.site === site);
-          let health: 'healthy' | 'warning' | 'error' = 'warning';
-          let healthLabel = 'no data';
-          if (stat && stat.last_seen_at) {
-            const ageMs = Date.now() - stat.last_seen_at;
-            if (ageMs < 3 * 86400000) {
-              health = 'healthy';
-              healthLabel = 'healthy';
-            } else {
-              health = 'warning';
-              healthLabel = 'stale';
-            }
+          const lastSeen = stat?.last_seen_at ?? null;
+          const ageMs = lastSeen ? Date.now() - lastSeen : Infinity;
+          let status: 'ok' | 'warn' | 'err' = 'warn';
+          let label = 'untested';
+          if (lastSeen && ageMs < 3 * 86_400_000) {
+            status = 'ok';
+            label = 'Healthy';
+          } else if (lastSeen && ageMs < 14 * 86_400_000) {
+            status = 'warn';
+            label = 'Stale';
+          } else if (!lastSeen) {
+            status = 'warn';
+            label = 'Untested';
+          } else {
+            status = 'err';
+            label = 'Inactive';
           }
           return (
-            <div key={site} className="card" style={{ marginBottom: 0 }}>
-              <div className="row spread" style={{ marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{meta.label}</div>
-                  <div className="faint" style={{ fontSize: 11, marginTop: 2 }}>
-                    {meta.description}
-                  </div>
+            <div
+              key={site}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '40px 1fr 160px 140px 110px',
+                gap: 16,
+                alignItems: 'center',
+                padding: '16px 20px',
+                borderBottom: i < entries.length - 1 ? '1px solid var(--border)' : 'none',
+              }}
+            >
+              <SourceIcon id={site} size={36} />
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 3 }}>
+                  {meta.label}
                 </div>
-                <span className={`pill ${health}`}>{healthLabel}</span>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                  {meta.description}
+                </div>
               </div>
-              <div className="card-grid">
-                <div className="stat">
-                  <div className="stat-label">Total items</div>
-                  <div className="stat-value">{stat?.total_items ?? 0}</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-label">Evaluated</div>
-                  <div className="stat-value">{stat?.evaluated_items ?? 0}</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-label">Deals</div>
-                  <div className="stat-value">{stat?.deals_flagged ?? 0}</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-label">Last seen</div>
-                  <div className="stat-value" style={{ fontSize: 12 }}>
-                    {stat?.last_seen_at ? formatTime(stat.last_seen_at) : '—'}
-                  </div>
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  Last scrape
+                </span>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {formatTime(lastSeen)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  Items found
+                </span>
+                <span className="mono" style={{ fontSize: 12 }}>
+                  {stat?.total_items ?? 0}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span className={`pip ${status}`} />
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    color:
+                      status === 'ok'
+                        ? 'var(--ok)'
+                        : status === 'warn'
+                        ? 'var(--warn)'
+                        : 'var(--err)',
+                    fontWeight: 500,
+                  }}
+                >
+                  {label}
+                </span>
               </div>
             </div>
           );
         })}
       </div>
-    </div>
+    </>
   );
 }

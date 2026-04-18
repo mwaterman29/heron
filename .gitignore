@@ -18,3 +18,6 @@ app/dev-sidecar/target/
 # Sidecar binaries (built from source, not tracked)
 app/src-tauri/binaries/*.exe
 app/src-tauri/binaries/*.bat
+
+# Design reference dump (pulled from Claude Design)
+.design-ref/

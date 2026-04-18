@@ -30,6 +30,8 @@ const fakePayload: DealPayload = {
     detail_fetched: 1,
     notified: 0,
     created_at: Date.now(),
+    listing_state: 'new',
+    thumbnail_url: null,
   },
   verdict: {
     relevant: true,

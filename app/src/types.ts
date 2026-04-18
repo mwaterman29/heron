@@ -37,6 +37,8 @@ export interface DealRow {
   first_seen_at: number;
   last_seen_at: number;
   times_seen: number;
+  listing_state: string | null;
+  thumbnail_url: string | null;
 }
 
 export interface SourceStat {
@@ -83,26 +85,80 @@ export interface LogFile {
   modified_at: number | null;
 }
 
-export type Panel = 'dashboard' | 'items' | 'sources' | 'settings' | 'history' | 'logs';
+export type Panel = 'dashboard' | 'queue' | 'targets' | 'sources' | 'settings' | 'history' | 'logs';
 
 export type DealTier = 'steal' | 'deal' | 'fair' | 'overpriced' | 'irrelevant';
 
-export const SCRAPER_META: Record<string, { label: string; description: string }> = {
-  hifishark: { label: 'HiFi Shark', description: 'Audio aggregator across 50+ sites' },
-  usaudiomart: { label: 'US Audio Mart', description: 'Audio-focused classifieds' },
-  craigslist: { label: 'Craigslist', description: 'Local classifieds, vehicle-aware' },
-  audiogon: { label: 'Audiogon', description: 'High-end audio marketplace' },
-  ebay: { label: 'eBay', description: 'US-only listings with item specifics' },
-  fbmp: { label: 'Facebook Marketplace', description: 'Local listings (requires headed browser)' },
-  mechmarket: { label: 'r/mechmarket', description: 'Mechanical keyboard parts' },
-  avexchange: { label: 'r/AVexchange', description: 'Audio gear trades' },
+export type ListingState = 'new' | 'followed' | 'rejected' | 'purchased' | 'lost';
+
+export const SCRAPER_META: Record<
+  string,
+  { label: string; short: string; abbr: string; description: string }
+> = {
+  hifishark: {
+    label: 'HiFi Shark',
+    short: 'HFS',
+    abbr: 'HS',
+    description: 'Audio aggregator across 50+ marketplace sites',
+  },
+  usaudiomart: {
+    label: 'US Audio Mart',
+    short: 'USAM',
+    abbr: 'UA',
+    description: 'Audio-focused classifieds, enthusiast community',
+  },
+  craigslist: {
+    label: 'Craigslist',
+    short: 'CL',
+    abbr: 'CL',
+    description: 'Local classifieds with vehicle-aware extraction',
+  },
+  audiogon: {
+    label: 'Audiogon',
+    short: 'Agon',
+    abbr: 'AG',
+    description: 'High-end audio marketplace (Cloudflare-gated)',
+  },
+  ebay: {
+    label: 'eBay',
+    short: 'eBay',
+    abbr: 'eB',
+    description: 'US-only listings with item specifics extraction',
+  },
+  fbmp: {
+    label: 'Facebook Marketplace',
+    short: 'FBMP',
+    abbr: 'FB',
+    description: 'Local listings, requires headed browser',
+  },
+  mechmarket: {
+    label: 'r/mechmarket',
+    short: 'MM',
+    abbr: 'MM',
+    description: 'Mechanical keyboard buy/sell/trade',
+  },
+  avexchange: {
+    label: 'r/AVexchange',
+    short: 'AVX',
+    abbr: 'AV',
+    description: 'Audio gear trades and sales',
+  },
 };
 
-export const TIER_COLORS: Record<string, { bg: string; fg: string; emoji: string }> = {
-  steal: { bg: '#7f1d1d', fg: '#fecaca', emoji: '🚨' },
-  deal: { bg: '#7c2d12', fg: '#fed7aa', emoji: '🔥' },
-  fair: { bg: '#713f12', fg: '#fef3c7', emoji: '👀' },
-  grail: { bg: '#4c1d95', fg: '#ddd6fe', emoji: '💎' },
-  overpriced: { bg: '#1f1f22', fg: '#8b8b8f', emoji: '' },
-  irrelevant: { bg: '#1f1f22', fg: '#6b6b70', emoji: '' },
+export const TIER_META: Record<string, { label: string; emoji: string }> = {
+  steal: { label: 'Steal', emoji: '🚨' },
+  deal: { label: 'Deal', emoji: '🔥' },
+  fair: { label: 'Fair', emoji: '👀' },
+  grail: { label: 'Grail', emoji: '💎' },
+  skip: { label: 'Skip', emoji: '—' },
+  overpriced: { label: 'Skip', emoji: '—' },
+  irrelevant: { label: 'Skip', emoji: '—' },
+};
+
+export const LISTING_STATE_META: Record<ListingState, { label: string; color: string }> = {
+  new: { label: 'New', color: 'var(--accent-text)' },
+  followed: { label: 'Following up', color: 'var(--tier-fair)' },
+  purchased: { label: 'Purchased', color: 'var(--ok)' },
+  lost: { label: 'Lost', color: 'var(--err)' },
+  rejected: { label: 'Rejected', color: 'var(--text-muted)' },
 };

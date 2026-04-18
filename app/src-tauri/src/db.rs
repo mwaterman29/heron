@@ -23,6 +23,8 @@ pub struct DealRow {
     pub first_seen_at: i64,
     pub last_seen_at: i64,
     pub times_seen: i64,
+    pub listing_state: Option<String>,
+    pub thumbnail_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,12 +67,15 @@ fn row_to_deal(row: &Row) -> rusqlite::Result<DealRow> {
         first_seen_at: row.get(16)?,
         last_seen_at: row.get(17)?,
         times_seen: row.get(18)?,
+        listing_state: row.get(19)?,
+        thumbnail_url: row.get(20)?,
     })
 }
 
 const DEAL_COLUMNS: &str = "id, site, search_id, title, price, price_usd, currency, url, location, \
      deal_tier, llm_reasoning, pass1_tier, pass1_reasoning, is_deal, detail_fetched, notified, \
-     first_seen_at, last_seen_at, times_seen";
+     first_seen_at, last_seen_at, times_seen, \
+     COALESCE(listing_state, 'new'), thumbnail_url";
 
 fn open_db(config_dir: &Path) -> rusqlite::Result<Option<Connection>> {
     let db_path = config_dir.join("data/seen_items.db");
@@ -96,6 +101,66 @@ pub fn recent_deals(config_dir: &Path, limit: u32) -> rusqlite::Result<Vec<DealR
         .query_map([limit], row_to_deal)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Get the full queue (all deal-flagged items) for triage.
+pub fn queue(config_dir: &Path) -> rusqlite::Result<Vec<DealRow>> {
+    let conn = match open_db(config_dir)? {
+        Some(c) => c,
+        None => return Ok(Vec::new()),
+    };
+    // Order: active items first (new/followed), then completed (rejected/purchased/lost).
+    // Within each, newest first.
+    let sql = format!(
+        "SELECT {} FROM seen_items
+         WHERE is_deal = 1
+         ORDER BY
+           CASE COALESCE(listing_state, 'new')
+             WHEN 'new' THEN 0
+             WHEN 'followed' THEN 1
+             WHEN 'purchased' THEN 2
+             WHEN 'lost' THEN 3
+             WHEN 'rejected' THEN 4
+             ELSE 5
+           END,
+           last_seen_at DESC
+         LIMIT 500",
+        DEAL_COLUMNS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], row_to_deal)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Update a listing's triage state.
+pub fn set_listing_state(
+    config_dir: &Path,
+    id: &str,
+    state: &str,
+) -> rusqlite::Result<()> {
+    // Validate state
+    if !matches!(state, "new" | "followed" | "rejected" | "purchased" | "lost") {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "invalid state: {}",
+            state
+        )));
+    }
+    let conn = match open_db(config_dir)? {
+        Some(c) => c,
+        None => return Ok(()),
+    };
+    // Ensure column exists (for DBs that predate the migration — belt and braces)
+    let _ = conn.execute(
+        "ALTER TABLE seen_items ADD COLUMN listing_state TEXT DEFAULT 'new'",
+        [],
+    );
+    conn.execute(
+        "UPDATE seen_items SET listing_state = ?1 WHERE id = ?2",
+        rusqlite::params![state, id],
+    )?;
+    Ok(())
 }
 
 /// Get filtered history rows.

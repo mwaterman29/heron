@@ -1,45 +1,75 @@
 import type { Panel } from '../types';
+import { Icon } from './Pills';
 
-const ITEMS: { id: Panel; label: string; icon: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: '◉' },
-  { id: 'items', label: 'Items', icon: '▤' },
-  { id: 'sources', label: 'Sources', icon: '⊟' },
-  { id: 'history', label: 'History', icon: '⎗' },
-  { id: 'logs', label: 'Logs', icon: '▥' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
-];
+interface NavItem {
+  id: Panel;
+  label: string;
+  icon: string;
+  badge?: string | number;
+}
 
 interface Props {
   current: Panel;
   onChange: (p: Panel) => void;
   running: boolean;
-  configDir: string;
+  queueCount: number;
+  targetCount: number;
+  sourceCount: number;
+  footerText?: string;
 }
 
-export function Sidebar({ current, onChange, running, configDir }: Props) {
-  const dirShort = configDir ? configDir.split(/[\\/]/).slice(-2).join('/') : '…';
+export function Sidebar({
+  current,
+  onChange,
+  running,
+  queueCount,
+  targetCount,
+  sourceCount,
+  footerText,
+}: Props) {
+  const items: NavItem[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+    { id: 'queue', label: 'Queue', icon: 'bell', badge: queueCount > 0 ? queueCount : undefined },
+    { id: 'targets', label: 'Targets', icon: 'items', badge: targetCount > 0 ? targetCount : undefined },
+    { id: 'sources', label: 'Sources', icon: 'sources', badge: sourceCount || undefined },
+    { id: 'history', label: 'History', icon: 'history' },
+    { id: 'logs', label: 'Logs', icon: 'logs' },
+    { id: 'settings', label: 'Settings', icon: 'settings' },
+  ];
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <h1>Deal Hunter</h1>
-        <div className="sub" title={configDir}>{dirShort}</div>
+        <div className="sidebar-brand-logo">D</div>
+        <div>
+          <div className="sidebar-brand-name">Deal Hunter</div>
+          <div className="sidebar-sub">Quietly hunting</div>
+        </div>
       </div>
+
       <nav className="sidebar-nav">
-        {ITEMS.map((item) => (
+        {items.map((it) => (
           <button
-            key={item.id}
-            className={`sidebar-nav-item ${current === item.id ? 'active' : ''}`}
-            onClick={() => onChange(item.id)}
+            key={it.id}
+            className={`nav-item ${current === it.id ? 'active' : ''}`}
+            onClick={() => onChange(it.id)}
           >
-            <span className="icon">{item.icon}</span>
-            <span>{item.label}</span>
+            <Icon name={it.icon} size={15} className="nav-icon" />
+            <span>{it.label}</span>
+            {it.badge && <span className="nav-badge mono">{it.badge}</span>}
           </button>
         ))}
       </nav>
+
       <div className="sidebar-footer">
-        <div className="sidebar-status">
-          <div className={`sidebar-status-dot ${running ? 'running' : 'idle'}`} />
-          <span>{running ? 'Scanning…' : 'Idle'}</span>
+        <span className={`pip ${running ? 'warn' : 'ok'}`} />
+        <div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+            {running ? 'Scanning…' : 'All good'}
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
+            {footerText ?? 'idle'}
+          </div>
         </div>
       </div>
     </aside>

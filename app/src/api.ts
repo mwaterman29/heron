@@ -32,6 +32,9 @@ export const api = {
 
   // DB queries
   getRecentDeals: (limit = 10) => invoke<DealRow[]>('get_recent_deals', { limit }),
+  getQueue: () => invoke<DealRow[]>('get_queue'),
+  setListingState: (id: string, state: string) =>
+    invoke<void>('set_listing_state', { id, state }),
   getHistory: (filter: HistoryFilter) => invoke<DealRow[]>('get_history', { filter }),
   getSourceStats: () => invoke<SourceStat[]>('get_source_stats'),
   getOverview: () => invoke<OverviewStats>('get_overview'),

@@ -79,6 +79,8 @@ pub fn run() {
             commands::set_schedule,
             commands::get_next_runs,
             commands::get_recent_deals,
+            commands::get_queue,
+            commands::set_listing_state,
             commands::get_history,
             commands::get_source_stats,
             commands::get_overview,
