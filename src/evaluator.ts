@@ -388,12 +388,14 @@ export async function evaluateBatch(
       ? buildCategoryHuntUserPrompt(reference, listings)
       : buildUserPrompt(reference, listings);
 
-  // Default primary flipped to DeepSeek 3.1 — in practice glm-4.7-flash was
-  // slow (~2 min/batch) AND intermittently returned empty content on OpenRouter.
-  // DeepSeek 3.1 is ~2-3x the per-token cost but still well under $1/M, and is
-  // dramatically faster and more reliable in this pipeline.
-  const primary = process.env.OPENROUTER_MODEL ?? 'deepseek/deepseek-chat-v3.1';
-  const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'z-ai/glm-4.7-flash';
+  // Default primary is Gemini 2.5 Flash — benchmarking (see
+  // src/scripts/benchmark-evaluator.ts) showed it's ~13x faster and ~6x
+  // cheaper than DeepSeek V3.1 on the same listing batches, with equal or
+  // better judgment quality on marginal calls. DeepSeek stays as the
+  // fallback because it's still reliable; the prior GLM 4.7 Flash fallback
+  // was broken with response_format:{type:'json_object'} (returned empty JSON).
+  const primary = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
+  const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'deepseek/deepseek-chat-v3.1';
 
   // Try primary → retry primary → fallback. A call counts as "failed"
   // if either the network call throws OR the response fails to parse
@@ -577,8 +579,8 @@ export async function evaluateDetail(
   }
 
   const user = buildDetailPrompt(reference, listing, pass1, detail);
-  const primary = process.env.OPENROUTER_MODEL ?? 'deepseek/deepseek-chat-v3.1';
-  const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'z-ai/glm-4.7-flash';
+  const primary = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
+  const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'deepseek/deepseek-chat-v3.1';
 
   let raw: string | null = null;
   try {

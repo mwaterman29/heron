@@ -9,6 +9,10 @@
  *
  * A typical daily run scrapes ~100 listings → ~12 batches × 13K tokens =
  * ~150K input + 60K output for pass-1. Pass-2 adds maybe 20K input + 2K output.
+ *
+ * Ordered roughly by recommendation quality for this workload. The first
+ * entry is the current default (see src/evaluator.ts). Benchmarks live in
+ * src/scripts/benchmark-evaluator.ts and src/scripts/benchmark-config-gen.ts.
  */
 
 export interface ModelOption {
@@ -26,7 +30,18 @@ export interface ModelOption {
 }
 
 export const MODEL_CATALOG: ModelOption[] = [
-  // DeepSeek — current default, excellent price/perf
+  // Google Gemini — current default (benchmarked ~13x faster and ~6x cheaper
+  // than DeepSeek V3.1 with equal-or-better judgment on marginal calls).
+  {
+    id: 'google/gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    vendor: 'Google',
+    input_per_1m: 0.15,
+    output_per_1m: 0.60,
+    recommended_pass: 0,
+    note: 'Default. Fast, strong world knowledge, handles JSON mode cleanly.',
+  },
+  // DeepSeek — reliable fallback, slower but well-tested in this pipeline
   {
     id: 'deepseek/deepseek-chat-v3.1',
     label: 'DeepSeek V3.1',
@@ -34,7 +49,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     input_per_1m: 0.27,
     output_per_1m: 1.10,
     recommended_pass: 0,
-    note: 'Default. Strong reasoning, cheap.',
+    note: 'Reliable fallback. Thorough reasoning but slower.',
   },
   {
     id: 'deepseek/deepseek-v3.2-exp',
@@ -45,16 +60,6 @@ export const MODEL_CATALOG: ModelOption[] = [
     recommended_pass: 0,
     note: 'Experimental 3.2.',
   },
-  // Z.ai GLM — fast fallback
-  {
-    id: 'z-ai/glm-4.7-flash',
-    label: 'GLM 4.7 Flash',
-    vendor: 'Z.ai',
-    input_per_1m: 0.10,
-    output_per_1m: 0.30,
-    recommended_pass: 1,
-    note: 'Very cheap fallback.',
-  },
   // Anthropic
   {
     id: 'anthropic/claude-haiku-4-5',
@@ -63,7 +68,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     input_per_1m: 0.80,
     output_per_1m: 4.00,
     recommended_pass: 1,
-    note: 'Fast, solid for pass-1.',
+    note: 'Fast. Watch for factual errors on older/rarer items.',
   },
   {
     id: 'anthropic/claude-sonnet-4-6',
@@ -72,7 +77,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     input_per_1m: 3.00,
     output_per_1m: 15.00,
     recommended_pass: 2,
-    note: 'Best reasoning for pass-2.',
+    note: 'Best reasoning for pass-2 (but ~25x cost of default).',
   },
   // OpenAI
   {
@@ -82,7 +87,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     input_per_1m: 0.15,
     output_per_1m: 0.60,
     recommended_pass: 1,
-    note: 'Fast and cheap.',
+    note: 'Thorough but slow; outputs much more than needed.',
   },
   {
     id: 'openai/gpt-5',
@@ -93,15 +98,6 @@ export const MODEL_CATALOG: ModelOption[] = [
     recommended_pass: 2,
     note: 'Premium reasoning.',
   },
-  // Google
-  {
-    id: 'google/gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
-    vendor: 'Google',
-    input_per_1m: 0.15,
-    output_per_1m: 0.60,
-    recommended_pass: 1,
-  },
   {
     id: 'google/gemini-2.5-pro',
     label: 'Gemini 2.5 Pro',
@@ -109,6 +105,7 @@ export const MODEL_CATALOG: ModelOption[] = [
     input_per_1m: 1.25,
     output_per_1m: 5.00,
     recommended_pass: 2,
+    note: 'Gemini step-up for hard calls.',
   },
 ];
 
