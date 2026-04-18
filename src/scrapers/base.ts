@@ -36,6 +36,14 @@ export interface DetailPage {
   price?: string | null;
   currency?: string | null;
   location?: string | null;
+  /**
+   * First reasonable cover image URL from the detail page. Preference order:
+   * og:image → link rel="image_src" → first <img> with naturalWidth > 200.
+   * Used by pass-2 to backfill thumbnails for listings whose search-page
+   * card had no image (notably USAudioMart, which shows a photo icon but no
+   * actual image on its search results table).
+   */
+  thumbnailUrl?: string | null;
   /** Site-specific bonus fields (e.g. mileage / drive / paint for Craigslist autos). */
   extras?: Record<string, string>;
   fetchedAt: number;
@@ -156,7 +164,35 @@ export async function genericFetchDetail(
       const price = priceMatch ? priceMatch[0] : null;
       const currencySymbol = priceMatch ? priceMatch[1] : null;
 
-      return { title, rawText: bodyText, price, currencySymbol };
+      // Best-effort cover image: og:image first (sites that care about
+      // social sharing almost always set this), then link rel="image_src",
+      // then the first <img> with a naturalWidth large enough to not be a
+      // favicon/tracker. 20-char minimum avoids data: URLs and shims.
+      const isGoodUrl = (u: string | null | undefined): u is string =>
+        !!u && u.length > 20 && /^https?:\/\//i.test(u);
+
+      let thumbnailUrl: string | null = null;
+      const og = document
+        .querySelector('meta[property="og:image"], meta[name="og:image"]')
+        ?.getAttribute('content');
+      if (isGoodUrl(og)) thumbnailUrl = og;
+      if (!thumbnailUrl) {
+        const link = document
+          .querySelector('link[rel="image_src"]')
+          ?.getAttribute('href');
+        if (isGoodUrl(link)) thumbnailUrl = link;
+      }
+      if (!thumbnailUrl) {
+        const imgs = Array.from(document.images) as HTMLImageElement[];
+        for (const img of imgs) {
+          if (img.naturalWidth > 200 && isGoodUrl(img.src)) {
+            thumbnailUrl = img.src;
+            break;
+          }
+        }
+      }
+
+      return { title, rawText: bodyText, price, currencySymbol, thumbnailUrl };
     }, maxChars);
 
     // Normalize the currency symbol into an ISO-ish code.
@@ -179,6 +215,7 @@ export async function genericFetchDetail(
       title: result.title || undefined,
       price: result.price,
       currency,
+      thumbnailUrl: result.thumbnailUrl,
       fetchedAt: Date.now(),
     };
   } finally {

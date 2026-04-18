@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { SCRAPER_META, TIER_META } from '../types';
 
 export function priceFmt(price: number | null | undefined): string {
@@ -48,13 +49,22 @@ export function ItemThumb({
   label?: string;
   src?: string | null;
 }) {
-  if (src) {
+  const [failed, setFailed] = useState(false);
+
+  // Reset failure state when the src changes (e.g. list re-render with a new deal)
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (src && !failed) {
     return (
       <img
         src={src}
         alt=""
         className="item-thumb"
         style={{ width: w, height: h, objectFit: 'cover' }}
+        onError={() => setFailed(true)}
+        referrerPolicy="no-referrer"
       />
     );
   }

@@ -77,6 +77,7 @@ let stmts: {
   markPass1: Statement;
   markPass2: Statement;
   markNotified: Statement;
+  updateThumbnail: Statement;
 } | null = null;
 
 /** Get the initialized database instance. Auto-initializes with CWD if not yet called. */
@@ -199,6 +200,15 @@ CREATE TABLE IF NOT EXISTS price_history (
       WHERE id = @id
     `),
     markNotified: db.prepare(`UPDATE seen_items SET notified = 1 WHERE id = ?`),
+    // Backfill thumbnail URL only when the row currently has none. Lets
+    // pass-2 detail-page extraction enrich listings (especially USAM, whose
+    // search page has no images) without overwriting a working search-page
+    // thumbnail from, say, eBay or Craigslist.
+    updateThumbnail: db.prepare(
+      `UPDATE seen_items
+       SET thumbnail_url = @url
+       WHERE id = @id AND (thumbnail_url IS NULL OR thumbnail_url = '')`,
+    ),
   };
 }
 
@@ -306,6 +316,16 @@ export const markEvaluated = markPass1;
 
 export function markNotified(itemId: string): void {
   getStmts().markNotified.run(itemId);
+}
+
+/**
+ * Backfill a listing's thumbnail URL. No-op if the row already has one —
+ * we never overwrite a working search-page thumbnail with a detail-page one,
+ * since search-page images tend to be more reliable (no referrer tricks,
+ * less likely to be a site-chrome logo).
+ */
+export function updateThumbnail(itemId: string, url: string): void {
+  getStmts().updateThumbnail.run({ id: itemId, url });
 }
 
 export function getSeenItem(id: string): SeenItemRow | undefined {

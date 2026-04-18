@@ -7,6 +7,7 @@ import {
   markNotified,
   markPass1,
   markPass2,
+  updateThumbnail,
   upsertListing,
   type SeenItemRow,
   type Verdict,
@@ -276,6 +277,20 @@ async function main() {
         );
         collectDeal(cand.listing, cand.pass1, cand.reference, digest);
         continue;
+      }
+
+      // Backfill thumbnail from the detail page when the search-page card
+      // didn't have one (notably USAM, whose SRP is a table with no images).
+      // No-op in db layer if the row already has a thumbnail.
+      if (detail?.thumbnailUrl && !cand.listing.thumbnail_url) {
+        try {
+          updateThumbnail(cand.listing.id, detail.thumbnailUrl);
+        } catch (err) {
+          logger.warn(
+            { err, itemId: cand.listing.id },
+            'failed to update thumbnail — continuing',
+          );
+        }
       }
 
       // If the detail page is too thin to be useful (Cloudflare stub,
