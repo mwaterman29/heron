@@ -271,7 +271,7 @@ export class DiscordDMNotifier implements Notifier {
       const price = formatPrice(p.listing, p.verdict);
       const url = resolvedUrls?.get(p.listing.id) ?? p.listing.url;
       const title = (p.listing.title ?? '').replace(/\n/g, ' ').slice(0, 55);
-      const reason = p.verdict.reasoning.slice(0, 100).replace(/\n/g, ' ');
+      const reason = p.verdict.reasoning.slice(0, 200).replace(/\n/g, ' ');
       // Bare URL in <> suppresses embed preview while staying clickable
       return `${meta.emoji} **${price}** — ${title}\n<${url}>\n> ${reason}`;
     });
