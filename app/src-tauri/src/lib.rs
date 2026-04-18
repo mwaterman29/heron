@@ -2,8 +2,10 @@ mod commands;
 mod db;
 mod logs;
 mod schedule;
+mod scheduler;
 mod secrets;
 mod sidecar;
+mod tray;
 
 use sidecar::AppState;
 use tauri::Manager;
@@ -36,6 +38,13 @@ fn resolve_config_dir(app: &tauri::App) -> std::path::PathBuf {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .on_window_event(|window, event| {
+            // Hide to tray on close instead of quitting
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -48,6 +57,13 @@ pub fn run() {
             let config_dir = resolve_config_dir(app);
             log::info!("Config dir: {}", config_dir.display());
             app.manage(AppState::new(config_dir));
+
+            // System tray
+            tray::setup(app)?;
+            tray::watch_state(app.handle().clone());
+
+            // Background scheduler
+            scheduler::start(app.handle().clone());
 
             Ok(())
         })

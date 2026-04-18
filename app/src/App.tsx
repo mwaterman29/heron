@@ -62,7 +62,7 @@ function App() {
       />
       <main className="main">
         {panel === 'dashboard' && (
-          <Dashboard status={status} onRunNow={handleRunNow} />
+          <Dashboard status={status} onRunNow={handleRunNow} onNavigate={setPanel} />
         )}
         {panel === 'items' && <Items />}
         {panel === 'sources' && <Sources />}

@@ -1,32 +1,42 @@
 import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { api } from '../api';
-import type { DealRow, OverviewStats, SourceStat, Status } from '../types';
+import type { DealRow, OverviewStats, Panel, SourceStat, Status } from '../types';
 import { SCRAPER_META } from '../types';
 import { Tier, SitePill, formatPrice, formatTime, formatFullTime } from '../components/Pills';
 
 interface Props {
   status: Status;
   onRunNow: (dry?: boolean) => void;
+  onNavigate: (p: Panel) => void;
 }
 
-export function Dashboard({ status, onRunNow }: Props) {
+export function Dashboard({ status, onRunNow, onNavigate }: Props) {
   const [recentDeals, setRecentDeals] = useState<DealRow[]>([]);
   const [sourceStats, setSourceStats] = useState<SourceStat[]>([]);
   const [overview, setOverview] = useState<OverviewStats | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [missingKeys, setMissingKeys] = useState<string[]>([]);
 
   const refresh = async () => {
     try {
-      const [deals, stats, ov] = await Promise.all([
+      const [deals, stats, ov, secrets] = await Promise.all([
         api.getRecentDeals(10),
         api.getSourceStats(),
         api.getOverview(),
+        api.readSecrets(false),
       ]);
       setRecentDeals(deals);
       setSourceStats(stats);
       setOverview(ov);
+      // Flag missing required keys for a friendly welcome
+      const required = ['OPENROUTER_API_KEY', 'DISCORD_BOT_TOKEN', 'DISCORD_USER_ID'];
+      const missing = required.filter((k) => {
+        const entry = secrets.find((s) => s.key === k);
+        return !entry || !entry.is_set;
+      });
+      setMissingKeys(missing);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -70,6 +80,36 @@ export function Dashboard({ status, onRunNow }: Props) {
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+
+      {missingKeys.length > 0 && (
+        <div
+          className="card"
+          style={{
+            borderColor: 'var(--accent)',
+            background: '#1a0f05',
+          }}
+        >
+          <h3 style={{ color: 'var(--accent-hover)' }}>Welcome!</h3>
+          <p style={{ fontSize: 13, marginBottom: 10 }}>
+            To start finding deals, you need to set up{' '}
+            {missingKeys.map((k, i) => (
+              <span key={k}>
+                <span className="mono" style={{ color: 'var(--accent-hover)' }}>{k}</span>
+                {i < missingKeys.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+            .
+          </p>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn sm primary" onClick={() => onNavigate('settings')}>
+              Open Settings →
+            </button>
+            <button className="btn sm" onClick={() => onNavigate('items')}>
+              Configure Items
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Status strip */}
       <div className="card">
