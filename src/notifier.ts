@@ -272,7 +272,8 @@ export class DiscordDMNotifier implements Notifier {
       const url = resolvedUrls?.get(p.listing.id) ?? p.listing.url;
       const title = (p.listing.title ?? '').replace(/\n/g, ' ').slice(0, 55);
       const reason = p.verdict.reasoning.slice(0, 100).replace(/\n/g, ' ');
-      return `${meta.emoji} **${price}** — [${title}](${url})\n> ${reason}`;
+      // Wrap URL in <> to suppress Discord's auto-embed/preview
+      return `${meta.emoji} **${price}** — [${title}](<${url}>)\n> ${reason}`;
     });
 
     const hasGrail = payloads.some((p) => p.verdict.grail_match);
