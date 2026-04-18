@@ -242,26 +242,57 @@ export class DiscordDMNotifier implements Notifier {
   }
 
   /**
-   * Send a daily digest: one or two DMs containing all deal embeds.
-   * Discord allows up to 10 embeds per message. Payloads should already
-   * be sorted by tier and capped by the caller.
+   * Send a daily digest. Adapts format to volume:
+   *   ≤3 deals → individual rich embeds (same as notify())
+   *   4+ deals → one compact text summary with emoji + price + link + snippet
    */
   async notifyDigest(payloads: DealPayload[], resolvedUrls?: Map<string, string>): Promise<void> {
     if (payloads.length === 0) return;
+
+    // ≤3: individual rich embeds — low volume, full detail is fine
+    if (payloads.length <= 3) {
+      for (const p of payloads) {
+        const url = resolvedUrls?.get(p.listing.id);
+        // Use resolved URL if available by temporarily patching listing
+        const origUrl = p.listing.url;
+        if (url) (p.listing as { url: string }).url = url;
+        await this.notify(p);
+        (p.listing as { url: string }).url = origUrl;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      return;
+    }
+
+    // 4+: compact markdown summary in one message
     const channelId = await this.ensureDMChannel();
-    const embeds = payloads.map((p) =>
-      buildEmbed(p, resolvedUrls?.get(p.listing.id)),
-    );
+
+    const lines = payloads.map((p) => {
+      const meta = TIER_META[p.verdict.grail_match ? 'grail' : p.verdict.deal_tier] ?? TIER_META.fair;
+      const price = formatPrice(p.listing, p.verdict);
+      const url = resolvedUrls?.get(p.listing.id) ?? p.listing.url;
+      const title = (p.listing.title ?? '').replace(/\n/g, ' ').slice(0, 55);
+      const reason = p.verdict.reasoning.slice(0, 100).replace(/\n/g, ' ');
+      return `${meta.emoji} **${price}** — [${title}](${url})\n> ${reason}`;
+    });
 
     const hasGrail = payloads.some((p) => p.verdict.grail_match);
     const header = hasGrail
-      ? `💎 **GRAIL MATCH** + ${payloads.length - 1} other find${payloads.length > 2 ? 's' : ''}`
-      : `📊 **Deal Hunter Digest** — ${payloads.length} find${payloads.length > 1 ? 's' : ''} today`;
+      ? `💎 **GRAIL MATCH** + ${payloads.length - 1} other finds`
+      : `📊 **Deal Hunter** — ${payloads.length} finds today`;
 
-    // Discord: max 10 embeds per message
-    for (let i = 0; i < embeds.length; i += 10) {
-      const batch = embeds.slice(i, i + 10);
-      const content = i === 0 ? header : '*(continued)*';
+    // Discord content limit = 2000 chars. Split at entry boundaries if needed.
+    const chunks: string[] = [];
+    let current = header;
+    for (const line of lines) {
+      if ((current + '\n\n' + line).length > 1950) {
+        chunks.push(current);
+        current = '';
+      }
+      current += '\n\n' + line;
+    }
+    if (current.trim()) chunks.push(current);
+
+    for (let i = 0; i < chunks.length; i++) {
       const res = await fetch(
         `https://discord.com/api/v10/channels/${channelId}/messages`,
         {
@@ -270,15 +301,14 @@ export class DiscordDMNotifier implements Notifier {
             Authorization: `Bot ${this.botToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ content, embeds: batch }),
+          body: JSON.stringify({ content: chunks[i] }),
         },
       );
       if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Discord DM digest ${res.status}: ${body.slice(0, 200)}`);
+        const errBody = await res.text().catch(() => '');
+        throw new Error(`Discord DM digest ${res.status}: ${errBody.slice(0, 200)}`);
       }
-      // Small delay between messages to avoid rate limiting
-      if (i + 10 < embeds.length) await new Promise((r) => setTimeout(r, 1000));
+      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 1000));
     }
   }
 }
