@@ -122,7 +122,11 @@ HOW TO EVALUATE EACH LISTING:
 
 CURRENCY: extracted_price MUST be in USD after conversion. All market value estimates (U) are in USD.
 
-SHIPPING: Respect any shipping constraints in the profile.
+SHIPPING:
+- Respect any shipping constraints in the buyer's profile or shipping notes.
+- If the listing explicitly says "will not ship to US", "local only", "no international shipping", or similar — mark it irrelevant unless the buyer's profile says local pickup is acceptable for that region.
+- Listings from Eastern European countries (Poland, Ukraine, Russia, etc.) or non-English marketplaces should be treated with extra skepticism for US-based buyers — shipping costs, customs delays, and return difficulty often eliminate any price advantage. Mark irrelevant unless the price is a genuine steal AND the listing confirms international shipping.
+- When in doubt about shipping viability to the US, mark as irrelevant rather than surfacing a deal the buyer can't actually complete.
 
 OUTPUT: Respond ONLY with the JSON object, no markdown fences, no preamble.`;
 

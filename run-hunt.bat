@@ -14,6 +14,7 @@ echo [%date% %time%] Starting deal-hunter run >> logs\hunt-%logdate%.log
 
 REM Run the full pipeline. FBMP forces headed mode internally;
 REM all other scrapers run headless.
-call npx tsx src/index.ts >> logs\hunt-%logdate%.log 2>&1
+REM Use absolute path — Task Scheduler's PATH doesn't include node
+call "C:\Program Files\nodejs\npx.cmd" tsx src/index.ts >> logs\hunt-%logdate%.log 2>&1
 
 echo [%date% %time%] Run complete (exit code %ERRORLEVEL%) >> logs\hunt-%logdate%.log

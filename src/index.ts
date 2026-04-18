@@ -12,7 +12,7 @@ import {
 import { getScraper, listRegisteredSites } from './scrapers/index.js';
 import { defaultScraperConfig, type DetailPage } from './scrapers/base.js';
 import { chunk, evaluateBatch, evaluateDetail } from './evaluator.js';
-import { pickNotifier, type DealPayload } from './notifier.js';
+import { pickNotifier, prepareDigest, type DealPayload } from './notifier.js';
 
 interface CliFlags {
   dryRunLLM: boolean;
@@ -57,22 +57,14 @@ interface QueueItem {
   reference: PriceReference;
 }
 
-async function notifyDeal(
+/** Collect a deal for the end-of-run digest instead of notifying inline. */
+function collectDeal(
   listing: SeenItemRow,
   verdict: Verdict,
   reference: PriceReference,
-  notifier: ReturnType<typeof import('./notifier.js').pickNotifier>,
-): Promise<void> {
-  const payload: DealPayload = { listing, verdict, reference };
-  try {
-    await notifier.notify(payload);
-    markNotified(listing.id);
-  } catch (notifyErr) {
-    logger.error(
-      { err: notifyErr, itemId: listing.id },
-      'notification failed — will retry next run',
-    );
-  }
+  digest: DealPayload[],
+): void {
+  digest.push({ listing, verdict, reference });
 }
 
 async function main() {
@@ -138,6 +130,7 @@ async function main() {
   }
 
   const notifier = pickNotifier(flags.consoleNotify);
+  const digest: DealPayload[] = [];
 
   // Build a flat list of all batches across all references, then fire them
   // at OpenRouter concurrently. Batches are independent so there's no ordering
@@ -220,7 +213,7 @@ async function main() {
           { itemId: cand.listing.id, site: cand.scraperId },
           'no fetchDetail for scraper — notifying on pass-1 verdict',
         );
-        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        collectDeal(cand.listing, cand.pass1, cand.reference, digest);
         continue;
       }
 
@@ -233,7 +226,7 @@ async function main() {
           { err: fetchErr, itemId: cand.listing.id },
           'pass-2 detail fetch failed — notifying on pass-1 verdict',
         );
-        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        collectDeal(cand.listing, cand.pass1, cand.reference, digest);
         continue;
       }
 
@@ -245,7 +238,7 @@ async function main() {
           { itemId: cand.listing.id, rawTextLen: detail?.rawText.length ?? 0 },
           'pass-2 detail content too thin — notifying on pass-1 verdict',
         );
-        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        collectDeal(cand.listing, cand.pass1, cand.reference, digest);
         continue;
       }
 
@@ -259,7 +252,7 @@ async function main() {
           { err: evalErr, itemId: cand.listing.id },
           'pass-2 evaluator failed — notifying on pass-1 verdict',
         );
-        await notifyDeal(cand.listing, cand.pass1, cand.reference, notifier);
+        collectDeal(cand.listing, cand.pass1, cand.reference, digest);
         continue;
       }
 
@@ -278,7 +271,7 @@ async function main() {
           },
           'pass-2 confirmed deal',
         );
-        await notifyDeal(cand.listing, pass2, cand.reference, notifier);
+        collectDeal(cand.listing, pass2, cand.reference, digest);
       } else {
         logger.info(
           {
@@ -292,6 +285,28 @@ async function main() {
         );
       }
     }
+  }
+
+  // --- End-of-run digest: sort by tier, cap at 12, resolve redirects, send ---
+  if (digest.length > 0) {
+    logger.info({ total: digest.length }, 'preparing digest notification');
+    const { payloads, resolvedUrls } = await prepareDigest(digest, 12);
+    try {
+      if (notifier.notifyDigest) {
+        await notifier.notifyDigest(payloads, resolvedUrls);
+      } else {
+        // Fallback for notifiers without digest support (e.g. ConsoleNotifier)
+        for (const p of payloads) {
+          await notifier.notify(p);
+        }
+      }
+      for (const p of payloads) markNotified(p.listing.id);
+      logger.info({ sent: payloads.length }, 'digest sent');
+    } catch (err) {
+      logger.error({ err }, 'digest notification failed');
+    }
+  } else {
+    logger.info('no deals found this run');
   }
 
   logger.info('deal-hunter run complete');
