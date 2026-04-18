@@ -1,4 +1,6 @@
+use crate::logs;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
@@ -36,7 +38,22 @@ impl AppState {
 
 const SUMMARY_PREFIX: &str = "__DEAL_HUNTER_SUMMARY__";
 
-pub fn spawn(app: AppHandle) -> Result<(), String> {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RunMode {
+    Full,
+    Dry,
+}
+
+impl RunMode {
+    fn as_arg(&self) -> &'static str {
+        match self {
+            RunMode::Full => "full",
+            RunMode::Dry => "dry",
+        }
+    }
+}
+
+pub fn spawn(app: AppHandle, mode: RunMode) -> Result<(), String> {
     let state = app.state::<AppState>();
 
     if state.sidecar_running.load(Ordering::SeqCst) {
@@ -46,6 +63,11 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
 
     let config_dir = state.config_dir.to_string_lossy().to_string();
 
+    let log_path = logs::current_log_path(&state.config_dir).map_err(|e| {
+        state.sidecar_running.store(false, Ordering::SeqCst);
+        format!("Failed to create log path: {}", e)
+    })?;
+
     let sidecar_command = app
         .shell()
         .sidecar("deal-hunter-sidecar")
@@ -53,12 +75,25 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
             state.sidecar_running.store(false, Ordering::SeqCst);
             format!("Failed to find sidecar: {}", e)
         })?
-        .args(["--config-dir", &config_dir, "--run-mode", "full"]);
+        .args([
+            "--config-dir",
+            &config_dir,
+            "--run-mode",
+            mode.as_arg(),
+        ]);
 
     let (mut rx, _child) = sidecar_command.spawn().map_err(|e| {
         state.sidecar_running.store(false, Ordering::SeqCst);
         format!("Failed to spawn sidecar: {}", e)
     })?;
+
+    // Open log file for capture
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+    let log_file = std::sync::Mutex::new(log_file);
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -66,8 +101,13 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
             match event {
                 CommandEvent::Stdout(line) => {
                     let text = String::from_utf8_lossy(&line).to_string();
-                    log::info!("[sidecar] {}", text);
-                    if let Some(json) = text.strip_prefix(SUMMARY_PREFIX) {
+                    let trimmed = text.trim_end();
+                    if let Ok(mut f) = log_file.lock() {
+                        let _ = writeln!(f, "{}", trimmed);
+                    }
+                    let _ = app_clone.emit("sidecar-log", trimmed.to_string());
+
+                    if let Some(json) = trimmed.strip_prefix(SUMMARY_PREFIX) {
                         match serde_json::from_str::<SidecarSummary>(json.trim()) {
                             Ok(summary) => {
                                 let state = app_clone.state::<AppState>();
@@ -79,7 +119,12 @@ pub fn spawn(app: AppHandle) -> Result<(), String> {
                     }
                 }
                 CommandEvent::Stderr(line) => {
-                    log::warn!("[sidecar stderr] {}", String::from_utf8_lossy(&line));
+                    let text = String::from_utf8_lossy(&line).to_string();
+                    let trimmed = text.trim_end();
+                    if let Ok(mut f) = log_file.lock() {
+                        let _ = writeln!(f, "[stderr] {}", trimmed);
+                    }
+                    let _ = app_clone.emit("sidecar-log", format!("[stderr] {}", trimmed));
                 }
                 CommandEvent::Terminated(payload) => {
                     let state = app_clone.state::<AppState>();

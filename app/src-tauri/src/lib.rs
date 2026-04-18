@@ -1,4 +1,8 @@
 mod commands;
+mod db;
+mod logs;
+mod schedule;
+mod secrets;
 mod sidecar;
 
 use sidecar::AppState;
@@ -11,8 +15,7 @@ fn resolve_config_dir(app: &tauri::App) -> std::path::PathBuf {
     {
         if let Ok(cwd) = std::env::current_dir() {
             // cargo tauri dev runs from src-tauri/; the project root is two levels up
-            let project_root = cwd.ancestors().nth(2);
-            if let Some(root) = project_root {
+            if let Some(root) = cwd.ancestors().nth(2) {
                 if root.join("config/price-reference.yaml").exists() {
                     return root.to_path_buf();
                 }
@@ -51,9 +54,21 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::read_config,
             commands::write_config,
+            commands::get_config_dir,
             commands::run_now,
             commands::get_status,
-            commands::get_config_dir,
+            commands::read_secrets,
+            commands::write_secrets,
+            commands::get_schedule,
+            commands::set_schedule,
+            commands::get_next_runs,
+            commands::get_recent_deals,
+            commands::get_history,
+            commands::get_source_stats,
+            commands::get_overview,
+            commands::list_logs,
+            commands::tail_log,
+            commands::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
