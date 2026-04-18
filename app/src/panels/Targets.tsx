@@ -11,16 +11,6 @@ const STATES_US = [
   'VA','VT','WA','WI','WV','WY',
 ];
 
-interface Variant {
-  model?: string;
-  name?: string;
-  msrp?: number;
-  fair_used?: number;
-  fair?: number;
-  deal_price?: number;
-  steal_price?: number;
-}
-
 interface SiteOverride {
   query?: string;
   queries?: string[];
@@ -42,13 +32,12 @@ interface PriceReference {
   fair_price?: number;
   deal_price?: number;
   steal_price?: number;
-  variants?: Variant[];
   grail?: string;
   notes?: string;
   shipping_notes?: string;
   allowed_states?: string[];
   profile?: string;
-  enabled?: boolean; // UI-only; not in current YAML but we treat missing sites[] as disabled
+  enabled?: boolean;
 }
 
 interface UserProfile {
@@ -60,11 +49,31 @@ interface ConfigShape {
   references: PriceReference[];
 }
 
-type Kind = 'exact' | 'hunt';
+type Kind = 'exact' | 'hunt' | 'general_review';
 type Tab = 'config' | 'queries' | 'raw';
 
+const KIND_META: Record<Kind, { label: string; short: string; desc: string }> = {
+  exact: {
+    label: 'Exact item',
+    short: 'Exact',
+    desc: 'A specific product with known MSRP and fair/deal/steal price tiers.',
+  },
+  hunt: {
+    label: 'Category hunt',
+    short: 'Hunt',
+    desc: 'A buyer profile — LLM evaluates each listing against its own typical used value.',
+  },
+  general_review: {
+    label: 'General review',
+    short: 'Review',
+    desc: 'Broad "what\'s interesting on this source" scan. One per source, maximum.',
+  },
+};
+
 function detectKind(ref: PriceReference): Kind {
-  return ref.profile ? 'hunt' : 'exact';
+  if (ref.type === 'general_review') return 'general_review';
+  if (ref.profile) return 'hunt';
+  return 'exact';
 }
 
 function isEnabled(ref: PriceReference): boolean {
@@ -81,6 +90,7 @@ export function Targets() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [newModalOpen, setNewModalOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -142,20 +152,23 @@ export function Targets() {
     setDirty(true);
   };
 
-  const addNew = (kind: Kind) => {
+  const createTarget = (kind: Kind, name: string, firstSite?: string) => {
     if (!config) return;
-    const id = `new-${Date.now().toString(36)}`;
+    const id = slugify(name) || `new-${Date.now().toString(36)}`;
     const base: PriceReference = {
       id,
-      name: 'New target',
-      type: kind === 'exact' ? 'item' : 'category_hunt',
-      sites: ['hifishark'],
+      name,
+      type:
+        kind === 'exact' ? 'item' : kind === 'hunt' ? 'category_hunt' : 'general_review',
+      sites: firstSite ? [firstSite] : kind === 'general_review' ? [] : ['hifishark'],
       query: '',
     };
     if (kind === 'hunt') base.profile = '';
+    if (kind === 'general_review') base.profile = '';
     setConfig({ ...config, references: [...config.references, base] });
     setSelectedId(id);
     setDirty(true);
+    setNewModalOpen(false);
   };
 
   const duplicate = (id: string) => {
@@ -190,6 +203,18 @@ export function Targets() {
   const activeCount = config?.references.filter(isEnabled).length ?? 0;
   const totalCount = config?.references.length ?? 0;
 
+  // Which sites already have a general_review target?
+  const generalReviewSites = useMemo(() => {
+    if (!config) return new Set<string>();
+    const out = new Set<string>();
+    for (const r of config.references) {
+      if (r.type === 'general_review' && r.sites && r.sites.length > 0) {
+        out.add(r.sites[0]);
+      }
+    }
+    return out;
+  }, [config]);
+
   return (
     <>
       <div className="page-header">
@@ -200,19 +225,11 @@ export function Targets() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Segmented
-            options={[
-              { value: 'form' as const, label: 'Form' },
-              { value: 'yaml' as const, label: 'Raw YAML' },
-            ]}
-            value={rawMode ? 'yaml' : 'form'}
-            onChange={(v) => setRawMode(v === 'yaml')}
-          />
-          <button className="btn" onClick={load}>
-            <Icon name="refresh" size={11} /> Reload
+          <button className="btn" onClick={() => setRawMode(!rawMode)}>
+            {rawMode ? 'Form editor' : 'Raw YAML'}
           </button>
-          <button className="btn btn-primary" onClick={save} disabled={!dirty && !rawMode}>
-            <Icon name="check" size={12} /> Save
+          <button className="btn btn-primary" onClick={() => setNewModalOpen(true)}>
+            <Icon name="plus" size={12} /> New target
           </button>
         </div>
       </div>
@@ -249,7 +266,7 @@ export function Targets() {
             overflow: 'hidden',
           }}
         >
-          {/* LEFT: list */}
+          {/* LEFT list */}
           <div
             style={{
               borderRight: '1px solid var(--border)',
@@ -294,30 +311,267 @@ export function Targets() {
                   onClick={() => setSelectedId(ref.id)}
                 />
               ))}
-              <div style={{ padding: 12, display: 'flex', gap: 6 }}>
-                <button className="btn btn-sm" onClick={() => addNew('exact')}>
-                  <Icon name="plus" size={11} /> Exact
-                </button>
-                <button className="btn btn-sm" onClick={() => addNew('hunt')}>
-                  <Icon name="plus" size={11} /> Hunt
-                </button>
-              </div>
+              {filtered.length === 0 && (
+                <div
+                  style={{
+                    padding: '24px 16px',
+                    color: 'var(--text-dim)',
+                    fontSize: 12,
+                    textAlign: 'center',
+                  }}
+                >
+                  No targets match.
+                </div>
+              )}
             </div>
           </div>
 
-          {/* RIGHT: editor */}
+          {/* RIGHT editor */}
           <TargetEditor
             ref_={selected}
             onChange={(patch) => selected && updateRef(selected.id, patch)}
             onDuplicate={() => selected && duplicate(selected.id)}
             onDelete={() => selected && remove(selected.id)}
+            generalReviewSites={generalReviewSites}
           />
         </div>
       ) : (
         <div className="empty-state">Loading…</div>
       )}
+
+      {/* Floating save bar */}
+      {dirty && (
+        <FloatingSave onSave={save} onDiscard={load} />
+      )}
+
+      {/* New target modal */}
+      {newModalOpen && config && (
+        <NewTargetModal
+          existingGeneralReviewSites={generalReviewSites}
+          onCancel={() => setNewModalOpen(false)}
+          onCreate={createTarget}
+        />
+      )}
     </>
   );
+}
+
+function FloatingSave({
+  onSave,
+  onDiscard,
+}: {
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 20,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'var(--bg-panel)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 10,
+        padding: '10px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+        zIndex: 50,
+      }}
+    >
+      <span className="pip warn" style={{ width: 8, height: 8, flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+        Unsaved changes
+      </span>
+      <button className="btn btn-sm" onClick={onDiscard}>
+        Discard
+      </button>
+      <button className="btn btn-sm btn-primary" onClick={onSave}>
+        <Icon name="check" size={11} /> Save
+      </button>
+    </div>
+  );
+}
+
+function NewTargetModal({
+  existingGeneralReviewSites,
+  onCancel,
+  onCreate,
+}: {
+  existingGeneralReviewSites: Set<string>;
+  onCancel: () => void;
+  onCreate: (kind: Kind, name: string, firstSite?: string) => void;
+}) {
+  const [kind, setKind] = useState<Kind>('exact');
+  const [name, setName] = useState('');
+  const [site, setSite] = useState<string>('hifishark');
+  const canCreate = name.trim().length > 0;
+
+  const sources = Object.entries(SCRAPER_META);
+  // For general_review, filter out sources that already have one
+  const availableSources = sources.filter(
+    ([s]) => kind !== 'general_review' || !existingGeneralReviewSites.has(s),
+  );
+
+  const firstAvailable = availableSources[0]?.[0];
+  // Auto-pick first available site when kind changes to general_review
+  const effectiveSite =
+    kind === 'general_review' && !availableSources.find(([s]) => s === site)
+      ? firstAvailable ?? site
+      : site;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.6)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 100,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-panel)',
+          border: '1px solid var(--border-strong)',
+          borderRadius: 10,
+          padding: 24,
+          width: 520,
+          maxWidth: 'calc(100vw - 40px)',
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>New target</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>
+          Pick the kind of target and give it a name. You can change everything later.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {(['exact', 'hunt', 'general_review'] as Kind[]).map((k) => {
+            const meta = KIND_META[k];
+            const disabled =
+              k === 'general_review' && existingGeneralReviewSites.size >= sources.length;
+            return (
+              <button
+                key={k}
+                onClick={() => !disabled && setKind(k)}
+                disabled={disabled}
+                style={{
+                  padding: '12px 14px',
+                  background:
+                    kind === k ? 'var(--bg-raised)' : 'var(--bg-input)',
+                  border: `1px solid ${kind === k ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 6,
+                  textAlign: 'left',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                  opacity: disabled ? 0.4 : 1,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{meta.label}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                  {meta.desc}
+                  {disabled && ' (all sources already have one)'}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            Name
+          </div>
+          <input
+            className="input"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={
+              kind === 'exact'
+                ? 'e.g. W211 E500'
+                : kind === 'hunt'
+                ? 'e.g. End-game IEMs'
+                : 'e.g. Daily mechmarket scan'
+            }
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canCreate) {
+                onCreate(
+                  kind,
+                  name.trim(),
+                  kind === 'general_review' ? effectiveSite : undefined,
+                );
+              }
+            }}
+          />
+        </div>
+
+        {kind === 'general_review' && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              Source
+              <span style={{ color: 'var(--text-dim)', marginLeft: 8, fontSize: 11 }}>
+                — only one per source allowed
+              </span>
+            </div>
+            <select
+              className="select mono"
+              value={effectiveSite}
+              onChange={(e) => setSite(e.target.value)}
+            >
+              {availableSources.length === 0 ? (
+                <option value="">(no sources available)</option>
+              ) : (
+                availableSources.map(([s, meta]) => (
+                  <option key={s} value={s}>
+                    {meta.label}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        )}
+
+        <div
+          style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}
+        >
+          <button className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={
+              !canCreate ||
+              (kind === 'general_review' && !effectiveSite)
+            }
+            onClick={() =>
+              onCreate(
+                kind,
+                name.trim(),
+                kind === 'general_review' ? effectiveSite : undefined,
+              )
+            }
+          >
+            <Icon name="plus" size={12} /> Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
 }
 
 function TargetListRow({
@@ -331,6 +585,7 @@ function TargetListRow({
 }) {
   const kind = detectKind(ref_);
   const enabled = isEnabled(ref_);
+  const meta = KIND_META[kind];
   return (
     <div
       onClick={onClick}
@@ -351,6 +606,9 @@ function TargetListRow({
               fontSize: 13,
               fontWeight: 500,
               color: enabled ? 'var(--text-primary)' : 'var(--text-muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
             {ref_.name}
@@ -361,21 +619,23 @@ function TargetListRow({
               fontSize: 10,
               padding: '1px 8px',
               background:
-                kind === 'hunt'
+                kind !== 'exact'
                   ? 'color-mix(in oklab, var(--accent) 14%, transparent)'
                   : 'var(--bg-raised)',
-              color: kind === 'hunt' ? 'var(--accent-text)' : 'var(--text-muted)',
+              color: kind !== 'exact' ? 'var(--accent-text)' : 'var(--text-muted)',
               borderColor:
-                kind === 'hunt'
+                kind !== 'exact'
                   ? 'color-mix(in oklab, var(--accent) 30%, var(--border))'
                   : 'var(--border)',
+              flexShrink: 0,
             }}
           >
-            {kind === 'hunt' ? 'Hunt' : 'Exact'}
+            {meta.short}
           </span>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-          {ref_.category ?? ref_.type ?? 'general'} · {(ref_.sites ?? []).length} sources
+          {ref_.category ?? ref_.type ?? 'general'} · {(ref_.sites ?? []).length} source
+          {(ref_.sites ?? []).length === 1 ? '' : 's'}
         </div>
       </div>
       {!enabled && (
@@ -390,28 +650,34 @@ function TargetListRow({
   );
 }
 
-// ---------------- Editor ----------------
-
 interface EditorProps {
   ref_: PriceReference | null;
   onChange: (patch: Partial<PriceReference>) => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  generalReviewSites: Set<string>;
 }
 
-function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
+function TargetEditor({
+  ref_,
+  onChange,
+  onDuplicate,
+  onDelete,
+  generalReviewSites,
+}: EditorProps) {
   const [tab, setTab] = useState<Tab>('config');
 
   if (!ref_) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-        Select a target on the left to edit.
+      <div
+        style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}
+      >
+        Select a target on the left to edit, or click "New target" to create one.
       </div>
     );
   }
 
   const kind = detectKind(ref_);
-  const isHunt = kind === 'hunt';
   const enabled = isEnabled(ref_);
 
   const setKind = (k: Kind) => {
@@ -422,27 +688,40 @@ function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
         fair_used: undefined,
         deal_price: undefined,
         steal_price: undefined,
-        variants: undefined,
         type: 'category_hunt',
+      });
+    } else if (k === 'general_review') {
+      // Force to one site
+      const firstSite = (ref_.sites ?? []).find((s) => !generalReviewSites.has(s) || s === ref_.sites?.[0]);
+      onChange({
+        profile: ref_.profile ?? '',
+        msrp: undefined,
+        fair_used: undefined,
+        deal_price: undefined,
+        steal_price: undefined,
+        type: 'general_review',
+        sites: firstSite ? [firstSite] : [],
       });
     } else {
       onChange({
         profile: undefined,
-        type: ref_.type === 'category_hunt' ? 'item' : ref_.type,
+        type: ref_.type === 'category_hunt' || ref_.type === 'general_review' ? 'item' : ref_.type,
       });
     }
   };
 
   const toggleEnabled = () => {
-    if (enabled) {
-      // "Disable" by clearing sites and remembering what was there via enabled: false flag
-      onChange({ enabled: false });
-    } else {
-      onChange({ enabled: true });
-    }
+    onChange({ enabled: !enabled });
   };
 
   const toggleSite = (site: string) => {
+    if (kind === 'general_review') {
+      // For general_review: clicking sets the single site. Block if already
+      // taken by another general_review target.
+      if (generalReviewSites.has(site) && ref_.sites?.[0] !== site) return;
+      onChange({ sites: [site] });
+      return;
+    }
     const sites = ref_.sites ?? [];
     const next = sites.includes(site) ? sites.filter((s) => s !== site) : [...sites, site];
     onChange({ sites: next });
@@ -477,10 +756,7 @@ function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
               padding: 0,
             }}
           />
-          <div
-            className="mono"
-            style={{ fontSize: 11, color: 'var(--text-muted)' }}
-          >
+          <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {ref_.category ?? ref_.type ?? 'general'} · id:{' '}
             <span style={{ color: 'var(--text-secondary)' }}>{ref_.id}</span>
           </div>
@@ -489,6 +765,7 @@ function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
           options={[
             { value: 'exact' as const, label: 'Exact' },
             { value: 'hunt' as const, label: 'Hunt' },
+            { value: 'general_review' as const, label: 'Review' },
           ]}
           value={kind}
           onChange={setKind}
@@ -527,10 +804,16 @@ function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
       {/* Body */}
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 20px 40px', minHeight: 0 }}>
         {tab === 'config' && (
-          <ConfigTab ref_={ref_} isHunt={isHunt} onChange={onChange} toggleSite={toggleSite} />
+          <ConfigTab
+            ref_={ref_}
+            kind={kind}
+            onChange={onChange}
+            toggleSite={toggleSite}
+            generalReviewSites={generalReviewSites}
+          />
         )}
         {tab === 'queries' && <QueriesTab ref_={ref_} onChange={onChange} />}
-        {tab === 'raw' && <RawTab ref_={ref_} isHunt={isHunt} />}
+        {tab === 'raw' && <RawTab ref_={ref_} kind={kind} />}
       </div>
 
       {/* Footer */}
@@ -550,12 +833,6 @@ function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
         <button className="btn btn-sm btn-danger" onClick={onDelete}>
           <Icon name="trash" size={11} /> Delete
         </button>
-        <span
-          className="mono"
-          style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-dim)' }}
-        >
-          Save from the top-right to persist changes
-        </span>
       </div>
     </div>
   );
@@ -563,20 +840,22 @@ function TargetEditor({ ref_, onChange, onDuplicate, onDelete }: EditorProps) {
 
 function ConfigTab({
   ref_,
-  isHunt,
+  kind,
   onChange,
   toggleSite,
+  generalReviewSites,
 }: {
   ref_: PriceReference;
-  isHunt: boolean;
+  kind: Kind;
   onChange: (patch: Partial<PriceReference>) => void;
   toggleSite: (site: string) => void;
+  generalReviewSites: Set<string>;
 }) {
   const sites = ref_.sites ?? [];
   const states = ref_.allowed_states ?? [];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      {!isHunt ? (
+      {kind === 'exact' && (
         <section>
           <div className="section-title">Price Tiers (USD)</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
@@ -637,17 +916,13 @@ function ConfigTab({
             </div>
           )}
         </section>
-      ) : (
+      )}
+
+      {kind === 'hunt' && (
         <section>
           <div className="section-title">
             Buyer Profile
-            <span
-              style={{
-                color: 'var(--text-dim)',
-                fontSize: 10,
-                fontWeight: 400,
-              }}
-            >
+            <span style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 400 }}>
               — LLM evaluates listings against this
             </span>
           </div>
@@ -661,7 +936,29 @@ function ConfigTab({
         </section>
       )}
 
-      {!isHunt && (
+      {kind === 'general_review' && (
+        <section>
+          <div className="section-title">
+            Review rules
+            <span style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 400 }}>
+              — what kinds of finds are worth your time?
+            </span>
+          </div>
+          <textarea
+            className="textarea"
+            rows={6}
+            value={ref_.profile ?? ''}
+            onChange={(e) => onChange({ profile: e.target.value })}
+            placeholder="Free-form guidance. Examples:
+- Always surface any mechanical keyboard switches under $0.50/switch
+- Anything vintage Nakamichi tape deck in working condition
+- Skip anything from outside the US
+- Ignore speakers — only interested in amps and DACs"
+          />
+        </section>
+      )}
+
+      {kind === 'exact' && (
         <section>
           <div className="section-title">
             Grail Description
@@ -674,12 +971,11 @@ function ConfigTab({
             rows={2}
             value={ref_.grail ?? ''}
             onChange={(e) => onChange({ grail: e.target.value || undefined })}
-            placeholder="e.g. OEM AMG wheels, <80k miles, documented service"
           />
         </section>
       )}
 
-      {!isHunt && (
+      {kind === 'exact' && (
         <section>
           <div className="section-title">
             Notes
@@ -725,14 +1021,29 @@ function ConfigTab({
             />
           </div>
           <div>
-            <div className="section-title">Sources to Search</div>
+            <div className="section-title">
+              {kind === 'general_review' ? 'Source' : 'Sources to search'}
+              {kind === 'general_review' && (
+                <span
+                  style={{ color: 'var(--text-dim)', fontSize: 10, fontWeight: 400 }}
+                >
+                  — pick exactly one
+                </span>
+              )}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
               {Object.entries(SCRAPER_META).map(([site, meta]) => {
                 const on = sites.includes(site);
+                const blocked =
+                  kind === 'general_review' &&
+                  !on &&
+                  generalReviewSites.has(site);
                 return (
                   <button
                     key={site}
-                    onClick={() => toggleSite(site)}
+                    onClick={() => !blocked && toggleSite(site)}
+                    disabled={blocked}
+                    title={blocked ? 'Another review target already uses this source' : undefined}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -742,9 +1053,36 @@ function ConfigTab({
                       border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                       borderRadius: 4,
                       textAlign: 'left',
+                      opacity: blocked ? 0.4 : 1,
+                      cursor: blocked ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    <span className={`cbox ${on ? 'on' : ''}`} />
+                    {kind === 'general_review' ? (
+                      <span
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 50,
+                          border: '1px solid var(--border-strong)',
+                          background: on ? 'var(--accent)' : 'var(--bg-input)',
+                          display: 'grid',
+                          placeItems: 'center',
+                        }}
+                      >
+                        {on && (
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 50,
+                              background: '#0b0c0f',
+                            }}
+                          />
+                        )}
+                      </span>
+                    ) : (
+                      <span className={`cbox ${on ? 'on' : ''}`} />
+                    )}
                     <SourceIcon id={site} size={18} />
                     <span style={{ fontSize: 12 }}>{meta.label}</span>
                   </button>
@@ -777,7 +1115,9 @@ function QueriesTab({
     if (Object.keys(cleaned).length === 0) delete allOverrides[site];
     onChange({
       site_overrides:
-        Object.keys(allOverrides).length > 0 ? (allOverrides as Record<string, SiteOverride>) : undefined,
+        Object.keys(allOverrides).length > 0
+          ? (allOverrides as Record<string, SiteOverride>)
+          : undefined,
     });
   };
 
@@ -809,7 +1149,10 @@ function QueriesTab({
                   .split('\n')
                   .map((s) => s.trim())
                   .filter(Boolean).length > 0
-                  ? e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
+                  ? e.target.value
+                      .split('\n')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
                   : undefined,
             })
           }
@@ -859,18 +1202,23 @@ function QueriesTab({
   );
 }
 
-function RawTab({ ref_, isHunt }: { ref_: PriceReference; isHunt: boolean }) {
+function RawTab({ ref_, kind }: { ref_: PriceReference; kind: Kind }) {
   const yamlText = yaml.dump(
     {
       id: ref_.id,
       name: ref_.name,
-      type: isHunt ? 'category_hunt' : ref_.type ?? 'item',
+      type:
+        kind === 'hunt'
+          ? 'category_hunt'
+          : kind === 'general_review'
+          ? 'general_review'
+          : ref_.type ?? 'item',
       category: ref_.category,
       sites: ref_.sites ?? [],
       query: ref_.query,
       queries: ref_.queries,
       site_overrides: ref_.site_overrides,
-      ...(isHunt
+      ...(kind !== 'exact'
         ? { profile: ref_.profile }
         : {
             msrp: ref_.msrp,
@@ -917,7 +1265,14 @@ function PriceField({
 }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500, marginBottom: 7 }}>
+      <div
+        style={{
+          fontSize: 12,
+          color: 'var(--text-secondary)',
+          fontWeight: 500,
+          marginBottom: 7,
+        }}
+      >
         {label}
       </div>
       <div style={{ position: 'relative' }}>
@@ -981,11 +1336,7 @@ function TagInput({
           </span>
         )}
         {tags.map((t) => (
-          <span
-            key={t}
-            className="chip mono"
-            style={{ background: 'var(--bg-raised)' }}
-          >
+          <span key={t} className="chip mono" style={{ background: 'var(--bg-raised)' }}>
             {t}
             <span
               onClick={(e) => {

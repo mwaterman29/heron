@@ -87,6 +87,8 @@ pub fn run() {
             commands::list_logs,
             commands::tail_log,
             commands::open_url,
+            commands::export_backup,
+            commands::wipe_database,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -129,6 +129,7 @@ function App() {
         targetCount={targetCount}
         sourceCount={sourceCount}
         footerText={nextRunLabel}
+        showStatus={keysReady}
       />
       <main className="main">
         {panel === 'dashboard' && (
@@ -143,9 +144,7 @@ function App() {
         {panel === 'queue' && <Queue />}
         {panel === 'targets' && <Targets />}
         {panel === 'sources' && <Sources />}
-        {panel === 'settings' && (
-          <Settings onRunNow={handleRunNow} keysReady={keysReady} />
-        )}
+        {panel === 'settings' && <Settings keysReady={keysReady} />}
         {panel === 'history' && <History />}
         {panel === 'logs' && <Logs />}
       </main>

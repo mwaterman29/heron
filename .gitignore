@@ -21,3 +21,9 @@ app/src-tauri/binaries/*.bat
 
 # Design reference dump (pulled from Claude Design)
 .design-ref/
+
+# Schedule config (created at runtime in dev, lives in config dir)
+schedule.json
+
+# Runtime backups dir (created by the Export button in Settings)
+backups/

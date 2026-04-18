@@ -45,4 +45,8 @@ export const api = {
 
   // Util
   openUrl: (url: string) => invoke<void>('open_url', { url }),
+
+  // Data management
+  exportBackup: () => invoke<string>('export_backup'),
+  wipeDatabase: () => invoke<number>('wipe_database'),
 };

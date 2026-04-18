@@ -162,3 +162,46 @@ pub fn open_url(url: String) -> Result<(), String> {
 
     result.map(|_| ()).map_err(|e| e.to_string())
 }
+
+// ===== Data management =====
+
+/// Export current config + secrets template to a timestamped backup file.
+/// Returns the absolute path of the exported file.
+#[tauri::command]
+pub fn export_backup(app: AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let ts = chrono::Local::now().format("%Y-%m-%d_%H%M%S");
+    let backup_dir = state.config_dir.join("backups");
+    fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    let dest = backup_dir.join(format!("config-{}.yaml", ts));
+
+    let src = state.config_dir.join("config/price-reference.yaml");
+    if !src.exists() {
+        return Err(format!("No config to export at {}", src.display()));
+    }
+    fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// Delete all rows from seen_items (and price_history). Non-recoverable.
+/// Returns the number of rows deleted.
+#[tauri::command]
+pub fn wipe_database(app: AppHandle) -> Result<u64, String> {
+    let state = app.state::<AppState>();
+    let db_path = state.config_dir.join("data/seen_items.db");
+    if !db_path.exists() {
+        return Ok(0);
+    }
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM seen_items", [], |r| r.get(0))
+        .unwrap_or(0);
+    // Delete children first (FK), then parent
+    conn.execute("DELETE FROM price_history", [])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM seen_items", [])
+        .map_err(|e| e.to_string())?;
+    conn.execute("VACUUM", []).map_err(|e| e.to_string())?;
+    Ok(count as u64)
+}

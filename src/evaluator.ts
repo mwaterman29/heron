@@ -130,6 +130,53 @@ SHIPPING:
 
 OUTPUT: Respond ONLY with the JSON object, no markdown fences, no preamble.`;
 
+const SYSTEM_PROMPT_GENERAL_REVIEW = `You are a marketplace scout in GENERAL REVIEW mode. You are being pointed at a single marketplace source with broad "vibes" guidance rather than a specific target item or narrow category. Your job is to surface any listings that plausibly match the buyer's stated rules and would be worth their time to look at.
+
+You will receive:
+1. A GUIDANCE section — free-form rules from the buyer about what kinds of things they're interested in, price sensitivity, etc.
+2. Optional NOTES and SHIPPING CONSTRAINTS.
+3. LISTING entries from a single marketplace source.
+
+For each listing, respond with a JSON object in this exact schema:
+{
+  "evaluations": [
+    {
+      "listing_index": 0,
+      "relevant": true,
+      "deal_tier": "steal|deal|fair|overpriced|irrelevant",
+      "confidence": 0.0,
+      "extracted_price": null,
+      "extracted_currency": "USD|EUR|GBP|...",
+      "reasoning": "1-3 sentence explanation",
+      "red_flags": [],
+      "positive_signals": [],
+      "grail_match": false
+    }
+  ]
+}
+
+HOW TO EVALUATE:
+1. MATCH TO GUIDANCE: Does this listing fit the rules the buyer gave? Most listings will NOT match — default to "irrelevant" unless you can point to specific language in the guidance that this listing satisfies. Be stingier than in category-hunt mode.
+
+2. VALUE CHECK (only for plausible matches): Estimate the item's typical used market value in USD (U). State U in your reasoning. If you cannot estimate U confidently, mark as irrelevant.
+
+3. DEAL TIER: Use the same thresholds as category hunt:
+   - "steal" = price ≤ 0.5 × U
+   - "deal" = price ≤ 0.75 × U
+   - "fair" = between 0.75 × U and U
+   - "overpriced" = above U
+   - State the ratio (price/U) explicitly.
+
+4. BIAS TOWARD PRECISION, NOT RECALL: The buyer will see a small digest. False positives (surfacing uninteresting items) are worse than false negatives (missing a borderline match). When in doubt, irrelevant.
+
+5. GRAIL: Set grail_match=true only for listings that would genuinely be a "stop-everything" find relative to the guidance — rare, exceptionally priced, and a clear fit.
+
+CURRENCY: extracted_price MUST be in USD after conversion.
+
+SHIPPING: Respect constraints as written. Mark irrelevant if geography makes the listing impractical for this buyer.
+
+OUTPUT: Respond ONLY with the JSON object, no markdown fences, no preamble.`;
+
 interface LLMEvaluation {
   listing_index: number;
   relevant: boolean;
@@ -177,6 +224,21 @@ ${reference.shipping_notes ? `=== SHIPPING CONSTRAINTS ===\n${reference.shipping
 ${formatListingBlocks(listings)}
 
 For each listing: estimate its typical used market value in USD, compare the asking price against that, and judge whether this is a genuine bargain worth surfacing given the buyer's profile.`;
+}
+
+function buildGeneralReviewUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
+  const source = listings[0]?.site ?? '(unknown source)';
+  return `=== SOURCE ===
+${source}
+
+=== GUIDANCE ===
+${reference.profile ?? reference.notes ?? '(no guidance provided — mark all listings irrelevant)'}
+
+${reference.shipping_notes ? `=== SHIPPING CONSTRAINTS ===\n${reference.shipping_notes}\n` : ''}
+=== LISTINGS ===
+${formatListingBlocks(listings)}
+
+Be strict. Surface only listings that clearly fit the guidance AND are at a good price.`;
 }
 
 /**
@@ -309,14 +371,22 @@ export async function evaluateBatch(
     return out;
   }
 
-  // Route to the category-hunt prompt when the reference has a profile
-  // field (no fixed pricing tiers — the LLM estimates each item's own
-  // used market value). Otherwise use the standard per-item prompt.
-  const isCategoryHunt = !!reference.profile;
-  const system = isCategoryHunt ? SYSTEM_PROMPT_CATEGORY_HUNT : SYSTEM_PROMPT;
-  const user = isCategoryHunt
-    ? buildCategoryHuntUserPrompt(reference, listings)
-    : buildUserPrompt(reference, listings);
+  // Route based on reference type:
+  //  - general_review: free-form "surface anything interesting here" scan on a single source
+  //  - category_hunt (profile set): evaluate against listing's own typical used market value
+  //  - default: evaluate against fixed pricing tiers on the reference
+  const isGeneralReview = reference.type === 'general_review';
+  const isCategoryHunt = !isGeneralReview && !!reference.profile;
+  const system = isGeneralReview
+    ? SYSTEM_PROMPT_GENERAL_REVIEW
+    : isCategoryHunt
+      ? SYSTEM_PROMPT_CATEGORY_HUNT
+      : SYSTEM_PROMPT;
+  const user = isGeneralReview
+    ? buildGeneralReviewUserPrompt(reference, listings)
+    : isCategoryHunt
+      ? buildCategoryHuntUserPrompt(reference, listings)
+      : buildUserPrompt(reference, listings);
 
   // Default primary flipped to DeepSeek 3.1 — in practice glm-4.7-flash was
   // slow (~2 min/batch) AND intermittently returned empty content on OpenRouter.

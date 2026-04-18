@@ -16,6 +16,7 @@ interface Props {
   targetCount: number;
   sourceCount: number;
   footerText?: string;
+  showStatus: boolean;
 }
 
 export function Sidebar({
@@ -26,6 +27,7 @@ export function Sidebar({
   targetCount,
   sourceCount,
   footerText,
+  showStatus,
 }: Props) {
   const items: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -61,17 +63,19 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className="sidebar-footer">
-        <span className={`pip ${running ? 'warn' : 'ok'}`} />
-        <div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-            {running ? 'Scanning…' : 'All good'}
-          </div>
-          <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
-            {footerText ?? 'idle'}
+      {showStatus && (
+        <div className="sidebar-footer">
+          <span className={`pip ${running ? 'warn' : 'ok'}`} />
+          <div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+              {running ? 'Scanning…' : 'All good'}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
+              {footerText ?? 'idle'}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </aside>
   );
 }
