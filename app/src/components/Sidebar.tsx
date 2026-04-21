@@ -52,10 +52,7 @@ export function Sidebar({
           className="sidebar-brand-logo"
           dangerouslySetInnerHTML={{ __html: heronInline }}
         />
-        <div>
-          <div className="sidebar-brand-name">Deal Hunter</div>
-          <div className="sidebar-sub">Quietly hunting</div>
-        </div>
+        <div className="sidebar-brand-name">Heron</div>
       </div>
 
       <nav className="sidebar-nav">
