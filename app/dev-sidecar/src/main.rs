@@ -10,7 +10,8 @@ const DEFAULT_PROJECT_ROOT: &str = r"C:\Programming\Important Projects\deal-hunt
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
 
-    let project_root = env::var("DEAL_HUNTER_PROJECT_ROOT")
+    let project_root = env::var("HERON_PROJECT_ROOT")
+        .or_else(|_| env::var("DEAL_HUNTER_PROJECT_ROOT")) // legacy alias
         .unwrap_or_else(|_| DEFAULT_PROJECT_ROOT.to_string());
 
     // Use cmd /C to invoke npx since it's a .cmd on Windows

@@ -1,4 +1,5 @@
 use crate::logs;
+use crate::schedule;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::sync::Mutex;
@@ -70,7 +71,7 @@ pub fn spawn(app: AppHandle, mode: RunMode) -> Result<(), String> {
 
     let sidecar_command = app
         .shell()
-        .sidecar("deal-hunter-sidecar")
+        .sidecar("heron-sidecar")
         .map_err(|e| {
             state.sidecar_running.store(false, Ordering::SeqCst);
             format!("Failed to find sidecar: {}", e)
@@ -81,6 +82,14 @@ pub fn spawn(app: AppHandle, mode: RunMode) -> Result<(), String> {
             "--run-mode",
             mode.as_arg(),
         ]);
+
+    // Mark "spawned" timestamp so the scheduler doesn't fire again until at
+    // least the configured interval has passed since this run started.
+    // This applies to both manual Run Now spawns and scheduled spawns.
+    let now_ts = chrono::Local::now().timestamp_millis();
+    if let Err(e) = schedule::write_last_fired(&state.config_dir, now_ts) {
+        log::warn!("Failed to persist scheduler last_fired_at: {}", e);
+    }
 
     let (mut rx, _child) = sidecar_command.spawn().map_err(|e| {
         state.sidecar_running.store(false, Ordering::SeqCst);

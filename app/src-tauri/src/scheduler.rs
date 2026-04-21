@@ -9,7 +9,16 @@ use tauri::{AppHandle, Manager};
 /// if the active-hours window permits.
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let mut last_fired: Option<i64> = None;
+        // Read persisted last-fired timestamp from disk so the schedule
+        // resumes correctly across app restarts. Without this, every relaunch
+        // would trigger a fresh run within ~90s, ignoring the user's interval.
+        let initial_state = app.state::<AppState>();
+        let mut last_fired: Option<i64> = schedule::read_last_fired(&initial_state.config_dir);
+        if let Some(ts) = last_fired {
+            log::info!("Scheduler resuming from disk: last_fired_at = {}", ts);
+        }
+        drop(initial_state);
+
         // Small delay on startup so the UI settles before we potentially kick off a run
         tokio::time::sleep(Duration::from_secs(30)).await;
 
@@ -37,10 +46,20 @@ pub fn start(app: AppHandle) {
                 }
             }
 
+            // Re-read last_fired from disk every iteration so manual Run Now
+            // updates from sidecar.rs are picked up here.
+            let persisted = schedule::read_last_fired(&state.config_dir);
+            if persisted.is_some() {
+                last_fired = persisted;
+            }
+
             let now = chrono::Local::now().timestamp_millis();
             let interval_ms = cfg.interval_minutes as i64 * 60_000;
             let due = match last_fired {
                 Some(ts) => (now - ts) >= interval_ms,
+                // First-ever run on a fresh install: fire once immediately
+                // so the user sees something happen. Subsequent restarts will
+                // see a persisted last_fired and respect the interval.
                 None => true,
             };
 
@@ -57,6 +76,9 @@ pub fn start(app: AppHandle) {
             match sidecar::spawn(app.clone(), RunMode::Full) {
                 Ok(()) => {
                     last_fired = Some(now);
+                    // sidecar::spawn writes the persistent last_fired_at, so
+                    // we don't need to write it again here. Track in-memory
+                    // for the next iteration's due-check.
                 }
                 Err(e) => {
                     log::warn!("Scheduled spawn failed: {}", e);

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Deal Hunter",
+  "productName": "Heron",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.heron.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "Deal Hunter",
-        "width": 800,
-        "height": 600,
+        "title": "Heron",
+        "width": 960,
+        "height": 680,
         "resizable": true,
         "fullscreen": false
       }
@@ -33,6 +33,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/deal-hunter-sidecar"]
+    "externalBin": ["binaries/heron-sidecar"]
   }
 }
