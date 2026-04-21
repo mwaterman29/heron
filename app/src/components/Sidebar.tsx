@@ -1,5 +1,11 @@
 import type { Panel } from '../types';
 import { Icon } from './Pills';
+import heronSvg from '../assets/heron.svg?raw';
+
+// Strip the original fill="#000000" so CSS controls color via fill: currentColor.
+const heronInline = heronSvg
+  .replace(/fill="[^"]*"/g, 'fill="currentColor"')
+  .replace('<svg ', '<svg preserveAspectRatio="xMidYMid meet" ');
 
 interface NavItem {
   id: Panel;
@@ -42,7 +48,10 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="sidebar-brand-logo">D</div>
+        <div
+          className="sidebar-brand-logo"
+          dangerouslySetInnerHTML={{ __html: heronInline }}
+        />
         <div>
           <div className="sidebar-brand-name">Deal Hunter</div>
           <div className="sidebar-sub">Quietly hunting</div>
