@@ -1,11 +1,17 @@
-import type { Panel } from '../types';
+import { useEffect, useState } from 'react';
+import type { Panel, UpdateInfo } from '../types';
 import { Icon } from './Pills';
+import { api } from '../api';
+import { UpdateModal } from './UpdateModal';
 import heronSvg from '../assets/heron.svg?raw';
 
 // Strip the original fill="#000000" so CSS controls color via fill: currentColor.
 const heronInline = heronSvg
   .replace(/fill="[^"]*"/g, 'fill="currentColor"')
   .replace('<svg ', '<svg preserveAspectRatio="xMidYMid meet" ');
+
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h
+const LAST_CHECK_KEY = 'heron-last-update-check';
 
 interface NavItem {
   id: Panel;
@@ -35,6 +41,28 @@ export function Sidebar({
   footerText,
   showStatus,
 }: Props) {
+  const [version, setVersion] = useState<string>('');
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // On mount: load version, check for updates if last check was >24h ago
+  useEffect(() => {
+    api.getVersion().then(setVersion).catch(() => {});
+
+    const lastCheck = Number(localStorage.getItem(LAST_CHECK_KEY) ?? 0);
+    if (Date.now() - lastCheck > UPDATE_CHECK_INTERVAL_MS) {
+      api
+        .checkForUpdates()
+        .then((info) => {
+          setUpdateInfo(info);
+          localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
+        })
+        .catch(() => {
+          // Network failures are silent — update checking is best-effort
+        });
+    }
+  }, []);
+
   const items: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     { id: 'queue', label: 'Queue', icon: 'bell', badge: queueCount > 0 ? queueCount : undefined },
@@ -45,6 +73,8 @@ export function Sidebar({
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
 
+  const showUpdateDot = !!updateInfo?.available;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -53,6 +83,36 @@ export function Sidebar({
           dangerouslySetInnerHTML={{ __html: heronInline }}
         />
         <div className="sidebar-brand-name">Heron</div>
+        {version && (
+          <button
+            className="sidebar-brand-version"
+            onClick={() => updateInfo?.available && setModalOpen(true)}
+            title={
+              showUpdateDot
+                ? `Update available: ${updateInfo!.latest_version}`
+                : `Version ${version}`
+            }
+            style={{
+              cursor: showUpdateDot ? 'pointer' : 'default',
+              color: showUpdateDot ? 'var(--accent-text)' : 'var(--text-dim)',
+            }}
+          >
+            v{version}
+            {showUpdateDot && (
+              <span
+                className="pip"
+                style={{
+                  background: 'var(--accent)',
+                  marginLeft: 6,
+                  width: 6,
+                  height: 6,
+                  display: 'inline-block',
+                  verticalAlign: 'middle',
+                }}
+              />
+            )}
+          </button>
+        )}
       </div>
 
       <nav className="sidebar-nav">
@@ -81,6 +141,10 @@ export function Sidebar({
             </div>
           </div>
         </div>
+      )}
+
+      {modalOpen && updateInfo && (
+        <UpdateModal info={updateInfo} onClose={() => setModalOpen(false)} />
       )}
     </aside>
   );

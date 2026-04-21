@@ -139,6 +139,20 @@ a:hover { text-decoration: underline; }
   letter-spacing: -0.01em;
 }
 
+.sidebar-brand-version {
+  background: none;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 2px 4px;
+  color: var(--text-dim);
+  margin-top: -2px;
+}
+
+.sidebar-brand-version:hover {
+  color: var(--text-secondary);
+}
+
 
 .sidebar-nav {
   display: flex;

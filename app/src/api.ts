@@ -9,6 +9,7 @@ import type {
   SecretEntry,
   SourceStat,
   Status,
+  UpdateInfo,
 } from './types';
 
 export const api = {
@@ -49,4 +50,8 @@ export const api = {
   // Data management
   exportBackup: () => invoke<string>('export_backup'),
   wipeDatabase: () => invoke<number>('wipe_database'),
+
+  // Version + updates
+  getVersion: () => invoke<string>('get_version'),
+  checkForUpdates: () => invoke<UpdateInfo>('check_for_updates'),
 };

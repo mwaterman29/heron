@@ -85,6 +85,17 @@ export interface LogFile {
   modified_at: number | null;
 }
 
+export interface UpdateInfo {
+  current_version: string;
+  latest_version: string | null;
+  available: boolean;
+  released: string | null;
+  notes: string | null;
+  download_url: string | null;
+  manifest_url_configured: boolean;
+  error: string | null;
+}
+
 export type Panel = 'dashboard' | 'queue' | 'targets' | 'sources' | 'settings' | 'history' | 'logs';
 
 export type DealTier = 'steal' | 'deal' | 'fair' | 'overpriced' | 'irrelevant';

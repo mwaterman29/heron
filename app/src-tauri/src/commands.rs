@@ -3,6 +3,7 @@ use crate::logs::{self, LogFile};
 use crate::schedule::{self, ScheduleConfig};
 use crate::secrets::{self, SecretEntry};
 use crate::sidecar::{self, AppState, RunMode, SidecarSummary};
+use crate::updater::{self, UpdateInfo};
 use serde::Serialize;
 use std::fs;
 use std::sync::atomic::Ordering;
@@ -183,6 +184,20 @@ pub fn export_backup(app: AppHandle) -> Result<String, String> {
 
     Ok(dest.to_string_lossy().to_string())
 }
+
+// ===== Version + updates =====
+
+#[tauri::command]
+pub fn get_version() -> String {
+    updater::current_version().to_string()
+}
+
+#[tauri::command]
+pub async fn check_for_updates() -> UpdateInfo {
+    updater::check().await
+}
+
+// ===== Database wipe (kept below for organisation) =====
 
 /// Delete all rows from seen_items (and price_history). Non-recoverable.
 /// Returns the number of rows deleted.
