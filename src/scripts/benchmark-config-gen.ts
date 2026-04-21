@@ -21,8 +21,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // which is the same lens the Settings panel uses.
 const MODELS = [
   { id: 'deepseek/deepseek-chat-v3.1', label: 'DeepSeek V3.1' },
-  { id: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
   { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { id: 'google/gemini-3.1-flash-lite-preview-20260303', label: 'Gemini 3.1 Flash Lite' },
+  { id: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
   { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
 ] as const;
 

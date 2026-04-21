@@ -388,13 +388,17 @@ export async function evaluateBatch(
       ? buildCategoryHuntUserPrompt(reference, listings)
       : buildUserPrompt(reference, listings);
 
-  // Default primary is Gemini 2.5 Flash — benchmarking (see
-  // src/scripts/benchmark-evaluator.ts) showed it's ~13x faster and ~6x
-  // cheaper than DeepSeek V3.1 on the same listing batches, with equal or
-  // better judgment quality on marginal calls. DeepSeek stays as the
-  // fallback because it's still reliable; the prior GLM 4.7 Flash fallback
-  // was broken with response_format:{type:'json_object'} (returned empty JSON).
-  const primary = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
+  // Default primary is Gemini 3.1 Flash Lite. Benchmark history (see
+  // src/scripts/benchmark-evaluator.ts):
+  //  - Gemini 2.5 Flash was previous default but Google announced its
+  //    deprecation, so we moved off ahead of the shutdown.
+  //  - 3.1 Flash Lite is faster than 2.5 Flash on this workload (~1.9s vs
+  //    2.4s avg per batch) and uses Google's main infrastructure (the
+  //    Gemini 3 family ranks in OpenRouter's top 5 by token volume).
+  //  - It's slightly more permissive on category_hunt exclusion clauses
+  //    than 2.5 Flash / DeepSeek — DeepSeek as fallback gives us the
+  //    stricter reading if the primary surfaces noise.
+  const primary = process.env.OPENROUTER_MODEL ?? 'google/gemini-3.1-flash-lite-preview-20260303';
   const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'deepseek/deepseek-chat-v3.1';
 
   // Try primary → retry primary → fallback. A call counts as "failed"
@@ -579,7 +583,7 @@ export async function evaluateDetail(
   }
 
   const user = buildDetailPrompt(reference, listing, pass1, detail);
-  const primary = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
+  const primary = process.env.OPENROUTER_MODEL ?? 'google/gemini-3.1-flash-lite-preview-20260303';
   const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? 'deepseek/deepseek-chat-v3.1';
 
   let raw: string | null = null;

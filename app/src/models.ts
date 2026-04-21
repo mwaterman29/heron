@@ -30,16 +30,18 @@ export interface ModelOption {
 }
 
 export const MODEL_CATALOG: ModelOption[] = [
-  // Google Gemini — current default (benchmarked ~13x faster and ~6x cheaper
-  // than DeepSeek V3.1 with equal-or-better judgment on marginal calls).
+  // Google Gemini 3.1 Flash Lite — current default. Fastest on this workload
+  // (~1.9s per batch in benchmark), moved off 2.5 Flash ahead of its
+  // deprecation. Slightly looser on exclusion clauses than 2.5 Flash, but
+  // DeepSeek as fallback gives the stricter reading.
   {
-    id: 'google/gemini-2.5-flash',
-    label: 'Gemini 2.5 Flash',
+    id: 'google/gemini-3.1-flash-lite-preview-20260303',
+    label: 'Gemini 3.1 Flash Lite',
     vendor: 'Google',
-    input_per_1m: 0.15,
-    output_per_1m: 0.60,
+    input_per_1m: 0.25,
+    output_per_1m: 1.50,
     recommended_pass: 0,
-    note: 'Default. Fast, strong world knowledge, handles JSON mode cleanly.',
+    note: 'Default. Fastest in benchmark; future-proof vs 2.5 Flash deprecation.',
   },
   // DeepSeek — reliable fallback, slower but well-tested in this pipeline
   {
@@ -49,7 +51,18 @@ export const MODEL_CATALOG: ModelOption[] = [
     input_per_1m: 0.27,
     output_per_1m: 1.10,
     recommended_pass: 0,
-    note: 'Reliable fallback. Thorough reasoning but slower.',
+    note: 'Reliable fallback. Slower but stricter on exclusion clauses.',
+  },
+  // Gemini 2.5 Flash — being deprecated by Google. Kept selectable for users
+  // who want to pin to it until shutdown, but no longer the default.
+  {
+    id: 'google/gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash (deprecating)',
+    vendor: 'Google',
+    input_per_1m: 0.15,
+    output_per_1m: 0.60,
+    recommended_pass: 0,
+    note: 'Deprecating soon — switch to 3.1 Flash Lite or DeepSeek.',
   },
   {
     id: 'deepseek/deepseek-v3.2-exp',

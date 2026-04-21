@@ -67,7 +67,12 @@ OUTPUT: Respond ONLY with the JSON object, no markdown fences, no preamble.`;
 const MODELS = [
   { id: 'deepseek/deepseek-chat-v3.1', label: 'DeepSeek V3.1', input_per_1m: 0.27, output_per_1m: 1.1 },
   { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash', input_per_1m: 0.15, output_per_1m: 0.6 },
-  { id: 'z-ai/glm-4.7-flash', label: 'GLM 4.7 Flash', input_per_1m: 0.10, output_per_1m: 0.30 },
+  {
+    id: 'google/gemini-3.1-flash-lite-preview-20260303',
+    label: 'Gemini 3.1 Flash Lite',
+    input_per_1m: 0.25,
+    output_per_1m: 1.5,
+  },
 ];
 
 interface Row {
