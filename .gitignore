@@ -27,3 +27,6 @@ schedule.json
 
 # Runtime backups dir (created by the Export button in Settings)
 backups/
+
+# Claude Code local cache
+.claude/
