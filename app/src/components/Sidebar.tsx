@@ -29,6 +29,7 @@ interface Props {
   sourceCount: number;
   footerText?: string;
   showStatus: boolean;
+  currentActivity?: string | null;
 }
 
 export function Sidebar({
@@ -40,6 +41,7 @@ export function Sidebar({
   sourceCount,
   footerText,
   showStatus,
+  currentActivity,
 }: Props) {
   const [version, setVersion] = useState<string>('');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -132,12 +134,25 @@ export function Sidebar({
       {showStatus && (
         <div className="sidebar-footer">
           <span className={`pip ${running ? 'warn' : 'ok'}`} />
-          <div>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
               {running ? 'Scanning…' : 'All good'}
             </div>
-            <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
-              {footerText ?? 'idle'}
+            <div
+              style={{
+                fontSize: 10.5,
+                color: 'var(--text-dim)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={
+                running && currentActivity
+                  ? currentActivity
+                  : footerText ?? 'idle'
+              }
+            >
+              {running && currentActivity ? currentActivity : footerText ?? 'idle'}
             </div>
           </div>
         </div>

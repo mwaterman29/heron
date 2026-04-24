@@ -25,6 +25,10 @@ pub struct AppState {
     pub config_dir: std::path::PathBuf,
     pub sidecar_running: AtomicBool,
     pub last_summary: Mutex<Option<SidecarSummary>>,
+    /// Human-readable description of what the sidecar is currently doing
+    /// (e.g. "Scraping HiFi Shark (3/8)"). Set when an __HERON_ACTIVITY__
+    /// line is parsed; cleared when the sidecar exits.
+    pub current_activity: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -33,11 +37,13 @@ impl AppState {
             config_dir,
             sidecar_running: AtomicBool::new(false),
             last_summary: Mutex::new(None),
+            current_activity: Mutex::new(None),
         }
     }
 }
 
 const SUMMARY_PREFIX: &str = "__DEAL_HUNTER_SUMMARY__";
+const ACTIVITY_PREFIX: &str = "__HERON_ACTIVITY__";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RunMode {
@@ -125,6 +131,11 @@ pub fn spawn(app: AppHandle, mode: RunMode) -> Result<(), String> {
                             }
                             Err(e) => log::warn!("Failed to parse summary JSON: {}", e),
                         }
+                    } else if let Some(activity) = trimmed.strip_prefix(ACTIVITY_PREFIX) {
+                        let activity_text = activity.trim().to_string();
+                        let state = app_clone.state::<AppState>();
+                        *state.current_activity.lock().unwrap() = Some(activity_text.clone());
+                        let _ = app_clone.emit("sidecar-activity", activity_text);
                     }
                 }
                 CommandEvent::Stderr(line) => {
@@ -138,6 +149,8 @@ pub fn spawn(app: AppHandle, mode: RunMode) -> Result<(), String> {
                 CommandEvent::Terminated(payload) => {
                     let state = app_clone.state::<AppState>();
                     state.sidecar_running.store(false, Ordering::SeqCst);
+                    *state.current_activity.lock().unwrap() = None;
+                    let _ = app_clone.emit("sidecar-activity", String::new());
                     let _ = app_clone.emit("sidecar-finished", payload.code);
                 }
                 _ => {}

@@ -6,7 +6,7 @@ use tauri::{
 };
 
 pub fn setup(app: &tauri::App) -> tauri::Result<()> {
-    let open_i = MenuItem::with_id(app, "open", "Open Deal Hunter", true, None::<&str>)?;
+    let open_i = MenuItem::with_id(app, "open", "Open Heron", true, None::<&str>)?;
     let run_i = MenuItem::with_id(app, "run_now", "Run Now", true, None::<&str>)?;
     let sep_i = tauri::menu::PredefinedMenuItem::separator(app)?;
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -53,27 +53,38 @@ fn show_window(app: &AppHandle) {
     }
 }
 
-/// Update the tray tooltip based on whether a run is active.
-pub fn update_tooltip(app: &AppHandle, running: bool) {
-    let label = if running { "Deal Hunter — Scanning…" } else { "Deal Hunter — Idle" };
+/// Update the tray tooltip based on whether a run is active + the current
+/// activity string from the sidecar (e.g. "Scraping HiFi Shark"). Falls
+/// back to "Scanning…" when running but no activity beacon yet, or
+/// "Idle" when not running.
+pub fn update_tooltip(app: &AppHandle, running: bool, activity: Option<&str>) {
+    let label = match (running, activity) {
+        (true, Some(a)) if !a.is_empty() => format!("Heron — {}", a),
+        (true, _) => "Heron — Scanning…".to_string(),
+        (false, _) => "Heron — Idle".to_string(),
+    };
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let _ = tray.set_tooltip(Some(label));
+        let _ = tray.set_tooltip(Some(&label));
     }
 }
 
-/// Check whether tooltip-update is supported on this platform (harmless if it isn't).
+/// Poll AppState every 2s and update the tray tooltip when running-state or
+/// activity-text changes. Cheap (in-process state lookup, no IO).
 pub fn watch_state(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let mut last = false;
+        let mut last_running = false;
+        let mut last_activity: Option<String> = None;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let running = app
-                .state::<AppState>()
+            let state = app.state::<AppState>();
+            let running = state
                 .sidecar_running
                 .load(std::sync::atomic::Ordering::SeqCst);
-            if running != last {
-                update_tooltip(&app, running);
-                last = running;
+            let activity = state.current_activity.lock().unwrap().clone();
+            if running != last_running || activity != last_activity {
+                update_tooltip(&app, running, activity.as_deref());
+                last_running = running;
+                last_activity = activity;
             }
         }
     });

@@ -132,6 +132,7 @@ async function main() {
   // Queue grouped by reference_id (so we batch evaluate per reference)
   const queueByRef = new Map<string, QueueItem[]>();
 
+  let searchIdx = 0;
   for (const search of selected) {
     const scraper = getScraper(search.site);
     if (!scraper) {
@@ -139,6 +140,8 @@ async function main() {
       continue;
     }
 
+    searchIdx++;
+    emitActivity(`Scraping ${search.site} (${searchIdx}/${selected.length})`);
     searchesRun++;
     let listings;
     try {
@@ -203,6 +206,8 @@ async function main() {
   }
 
   if (jobs.length > 0) {
+    const totalListings = jobs.reduce((a, j) => a + j.listings.length, 0);
+    emitActivity(`Evaluating ${totalListings} listings (${jobs.length} batches) with LLM`);
     logger.info({ jobs: jobs.length }, 'evaluating batches in parallel');
     const results = await Promise.all(
       jobs.map((job) =>
@@ -255,7 +260,9 @@ async function main() {
       logger.info({ count: candidates.length }, 'pass-1 flagged deal candidates — running pass-2 drill-down');
     }
 
+    let candIdx = 0;
     for (const cand of candidates) {
+      candIdx++;
       const scraper = getScraper(cand.scraperId);
       if (!scraper || !scraper.fetchDetail) {
         logger.info(
@@ -265,6 +272,9 @@ async function main() {
         collectDeal(cand.listing, cand.pass1, cand.reference, digest);
         continue;
       }
+
+      const titleShort = (cand.listing.title ?? cand.listing.id).slice(0, 50);
+      emitActivity(`Drilling into deal ${candIdx}/${candidates.length}: ${titleShort}`);
 
       let detail: DetailPage | null = null;
       try {
@@ -353,6 +363,7 @@ async function main() {
   // --- End-of-run digest: sort by tier, cap at 12, resolve redirects, send ---
   dealsFound = digest.length;
   if (digest.length > 0) {
+    emitActivity(`Sending digest (${digest.length} deals)`);
     logger.info({ total: digest.length }, 'preparing digest notification');
     const { payloads, resolvedUrls } = await prepareDigest(digest, 12);
     try {
@@ -387,6 +398,16 @@ interface SummaryCounters {
   dealsFound: number;
   notificationsSent: number;
   errors: string[];
+}
+
+/**
+ * Emit a human-readable activity beacon. The Tauri shell parses lines
+ * starting with __HERON_ACTIVITY__ in its sidecar stdout handler and
+ * surfaces the rest as the "currently doing X" string in the sidebar +
+ * dashboard status strip. Single-line, plain text (not JSON).
+ */
+function emitActivity(text: string): void {
+  process.stdout.write(`__HERON_ACTIVITY__${text}\n`);
 }
 
 function emitSummary(c: SummaryCounters): void {

@@ -19,7 +19,7 @@ function App() {
     const saved = localStorage.getItem('dh-panel') as Panel | null;
     return saved ?? 'dashboard';
   });
-  const [status, setStatus] = useState<Status>({ running: false, last_summary: null });
+  const [status, setStatus] = useState<Status>({ running: false, last_summary: null, current_activity: null });
   const [missingKeys, setMissingKeys] = useState<string[]>(REQUIRED_KEYS);
   const [queueCount, setQueueCount] = useState(0);
   const [targetCount, setTargetCount] = useState(0);
@@ -91,6 +91,16 @@ function App() {
     const unlistenSummary = listen<SidecarSummary>('sidecar-summary', (event) => {
       setStatus((prev) => ({ ...prev, last_summary: event.payload }));
     });
+    const unlistenActivity = listen<string>('sidecar-activity', (event) => {
+      const text = event.payload;
+      setStatus((prev) => ({
+        ...prev,
+        // Empty payload means "cleared" (e.g. on terminate)
+        current_activity: text && text.length > 0 ? text : null,
+        // If we're getting activity beacons we definitely are running
+        running: text && text.length > 0 ? true : prev.running,
+      }));
+    });
     const unlistenFinished = listen<number | null>('sidecar-finished', () => {
       refreshStatus();
       refreshCounts();
@@ -99,6 +109,7 @@ function App() {
     const interval = setInterval(refreshCounts, 30_000);
     return () => {
       unlistenSummary.then((fn) => fn());
+      unlistenActivity.then((fn) => fn());
       unlistenFinished.then((fn) => fn());
       clearInterval(interval);
     };
@@ -130,6 +141,7 @@ function App() {
         sourceCount={sourceCount}
         footerText={nextRunLabel}
         showStatus={keysReady}
+        currentActivity={status.current_activity}
       />
       <main className="main">
         {panel === 'dashboard' && (

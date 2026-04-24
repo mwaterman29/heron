@@ -23,19 +23,34 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [dataOpMsg, setDataOpMsg] = useState<string | null>(null);
+  const [autostart, setAutostart] = useState<boolean | null>(null);
 
   const loadAll = async () => {
     try {
-      const [s, sch, runs] = await Promise.all([
+      const [s, sch, runs, auto] = await Promise.all([
         api.readSecrets(false),
         api.getSchedule(),
         api.getNextRuns(3),
+        api.getAutostartEnabled().catch(() => false),
       ]);
       setSecrets(s);
       setSchedule(sch);
       setNextRuns(runs);
+      setAutostart(auto);
       setError(null);
     } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const toggleAutostart = async () => {
+    if (autostart === null) return;
+    const next = !autostart;
+    setAutostart(next); // optimistic
+    try {
+      await api.setAutostartEnabled(next);
+    } catch (e) {
+      setAutostart(!next); // rollback
       setError(String(e));
     }
   };
@@ -213,7 +228,7 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
               <div style={{ fontSize: 13, fontWeight: 500 }}>Automatic runs</div>
               <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
                 {schedEnabled
-                  ? 'Deal Hunter will scan on a recurring interval while the app is open.'
+                  ? 'Heron will scan on a recurring interval while the app is open.'
                   : 'Disabled — scans only happen when you click Run now.'}
               </div>
             </div>
@@ -375,6 +390,31 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
               )}
             </div>
           </fieldset>
+
+          {/* Autostart toggle — orthogonal to schedule, but lives in the same
+              section since both control "when does Heron run on its own". */}
+          {autostart !== null && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: 20,
+                paddingTop: 16,
+                borderTop: '1px solid var(--border)',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>Launch at login</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {autostart
+                    ? 'Heron starts hidden in the system tray when you log in.'
+                    : 'You\'ll need to launch Heron manually after each login.'}
+                </div>
+              </div>
+              <Toggle on={autostart} onClick={toggleAutostart} />
+            </div>
+          )}
         </div>
       )}
 

@@ -15,6 +15,7 @@ export interface SidecarSummary {
 export interface Status {
   running: boolean;
   last_summary: SidecarSummary | null;
+  current_activity: string | null;
 }
 
 export interface DealRow {

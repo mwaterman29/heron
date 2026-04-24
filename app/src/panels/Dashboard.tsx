@@ -155,6 +155,8 @@ function StatusStrip({
   const summary = status.last_summary;
   const nextIn = schedule?.enabled && nextRun ? formatTime(nextRun).replace(' ago', '') : null;
 
+  const activity = status.current_activity;
+
   return (
     <div
       className="panel"
@@ -171,17 +173,29 @@ function StatusStrip({
           display: 'flex',
           alignItems: 'center',
           gap: 11,
-          whiteSpace: 'nowrap',
+          minWidth: 0,
         }}
       >
         <span
           className={`pip ${running ? 'warn' : 'ok'}`}
-          style={{ width: 9, height: 9 }}
+          style={{ width: 9, height: 9, flexShrink: 0 }}
         />
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Status</div>
-          <div style={{ fontWeight: 500, fontSize: 14 }}>
-            {running ? 'Scanning…' : 'All good'}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+            Status
+          </div>
+          <div
+            style={{
+              fontWeight: 500,
+              fontSize: 14,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: 320,
+            }}
+            title={running && activity ? activity : undefined}
+          >
+            {running ? activity ?? 'Scanning…' : 'All good'}
           </div>
         </div>
       </div>

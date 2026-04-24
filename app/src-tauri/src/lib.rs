@@ -39,6 +39,12 @@ fn resolve_config_dir(app: &tauri::App) -> std::path::PathBuf {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            // No args — Heron starts hidden to tray on autostart so the
+            // user isn't surprised by a window popping up at boot.
+            Some(vec!["--minimized"]),
+        ))
         .on_window_event(|window, event| {
             // Hide to tray on close instead of quitting
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -66,6 +72,14 @@ pub fn run() {
             // Background scheduler
             scheduler::start(app.handle().clone());
 
+            // If launched with --minimized (typically via autostart at boot),
+            // hide the window so we go straight to the tray.
+            if std::env::args().any(|a| a == "--minimized") {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.hide();
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -92,6 +106,8 @@ pub fn run() {
             commands::wipe_database,
             commands::get_version,
             commands::check_for_updates,
+            commands::get_autostart_enabled,
+            commands::set_autostart_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

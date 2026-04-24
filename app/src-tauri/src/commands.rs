@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager};
 pub struct Status {
     pub running: bool,
     pub last_summary: Option<SidecarSummary>,
+    pub current_activity: Option<String>,
 }
 
 // ===== Config =====
@@ -57,7 +58,8 @@ pub fn get_status(app: AppHandle) -> Status {
     let state = app.state::<AppState>();
     let running = state.sidecar_running.load(Ordering::SeqCst);
     let last_summary = state.last_summary.lock().unwrap().clone();
-    Status { running, last_summary }
+    let current_activity = state.current_activity.lock().unwrap().clone();
+    Status { running, last_summary, current_activity }
 }
 
 // ===== Secrets (.env) =====
@@ -183,6 +185,26 @@ pub fn export_backup(app: AppHandle) -> Result<String, String> {
     fs::copy(&src, &dest).map_err(|e| e.to_string())?;
 
     Ok(dest.to_string_lossy().to_string())
+}
+
+// ===== Autostart on boot =====
+
+#[tauri::command]
+pub async fn get_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+    mgr.is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+    if enabled {
+        mgr.enable().map_err(|e| e.to_string())
+    } else {
+        mgr.disable().map_err(|e| e.to_string())
+    }
 }
 
 // ===== Version + updates =====

@@ -54,4 +54,9 @@ export const api = {
   // Version + updates
   getVersion: () => invoke<string>('get_version'),
   checkForUpdates: () => invoke<UpdateInfo>('check_for_updates'),
+
+  // Autostart on boot
+  getAutostartEnabled: () => invoke<boolean>('get_autostart_enabled'),
+  setAutostartEnabled: (enabled: boolean) =>
+    invoke<void>('set_autostart_enabled', { enabled }),
 };
