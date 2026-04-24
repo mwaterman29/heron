@@ -4,6 +4,7 @@ use crate::schedule::{self, ScheduleConfig};
 use crate::secrets::{self, SecretEntry};
 use crate::sidecar::{self, AppState, RunMode, SidecarSummary};
 use crate::updater::{self, UpdateInfo};
+use crate::generator::{self, GenerateResult};
 use serde::Serialize;
 use std::fs;
 use std::sync::atomic::Ordering;
@@ -185,6 +186,20 @@ pub fn export_backup(app: AppHandle) -> Result<String, String> {
     fs::copy(&src, &dest).map_err(|e| e.to_string())?;
 
     Ok(dest.to_string_lossy().to_string())
+}
+
+// ===== Target generation (LLM-assisted) =====
+
+#[tauri::command]
+pub async fn generate_target_yaml(
+    app: AppHandle,
+    description: String,
+) -> Result<GenerateResult, String> {
+    let config_dir = {
+        let state = app.state::<AppState>();
+        state.config_dir.clone()
+    };
+    generator::generate(&config_dir, &description).await
 }
 
 // ===== Autostart on boot =====

@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod generator;
 mod logs;
 mod schedule;
 mod scheduler;
@@ -108,6 +109,7 @@ pub fn run() {
             commands::check_for_updates,
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
+            commands::generate_target_yaml,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

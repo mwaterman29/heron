@@ -171,6 +171,27 @@ export function Targets() {
     setNewModalOpen(false);
   };
 
+  /**
+   * Adopt an LLM-generated target into the in-memory config. The generator
+   * returns a YAML string; we parse it and merge into the references list.
+   * Same dirty-flag + select-the-new-row UX as createTarget.
+   */
+  const adoptGeneratedTarget = (parsed: Partial<PriceReference>) => {
+    if (!config) return;
+    const id = parsed.id?.trim() || slugify(parsed.name ?? '') || `gen-${Date.now().toString(36)}`;
+    const ref: PriceReference = {
+      id,
+      name: parsed.name ?? 'Generated target',
+      type: parsed.type ?? (parsed.profile ? 'category_hunt' : 'item'),
+      sites: parsed.sites?.length ? parsed.sites : ['hifishark'],
+      ...parsed,
+    } as PriceReference;
+    setConfig({ ...config, references: [...config.references, ref] });
+    setSelectedId(id);
+    setDirty(true);
+    setNewModalOpen(false);
+  };
+
   const duplicate = (id: string) => {
     if (!config) return;
     const ref = config.references.find((r) => r.id === id);
@@ -350,6 +371,7 @@ export function Targets() {
           existingGeneralReviewSites={generalReviewSites}
           onCancel={() => setNewModalOpen(false)}
           onCreate={createTarget}
+          onAdopt={adoptGeneratedTarget}
         />
       )}
     </>
@@ -395,32 +417,20 @@ function FloatingSave({
   );
 }
 
+type ModalStep = 'choose' | 'manual' | 'generate';
+
 function NewTargetModal({
   existingGeneralReviewSites,
   onCancel,
   onCreate,
+  onAdopt,
 }: {
   existingGeneralReviewSites: Set<string>;
   onCancel: () => void;
   onCreate: (kind: Kind, name: string, firstSite?: string) => void;
+  onAdopt: (parsed: Partial<PriceReference>) => void;
 }) {
-  const [kind, setKind] = useState<Kind>('exact');
-  const [name, setName] = useState('');
-  const [site, setSite] = useState<string>('hifishark');
-  const canCreate = name.trim().length > 0;
-
-  const sources = Object.entries(SCRAPER_META);
-  // For general_review, filter out sources that already have one
-  const availableSources = sources.filter(
-    ([s]) => kind !== 'general_review' || !existingGeneralReviewSites.has(s),
-  );
-
-  const firstAvailable = availableSources[0]?.[0];
-  // Auto-pick first available site when kind changes to general_review
-  const effectiveSite =
-    kind === 'general_review' && !availableSources.find(([s]) => s === site)
-      ? firstAvailable ?? site
-      : site;
+  const [step, setStep] = useState<ModalStep>('choose');
 
   return (
     <div
@@ -441,128 +451,390 @@ function NewTargetModal({
           border: '1px solid var(--border-strong)',
           borderRadius: 10,
           padding: 24,
-          width: 520,
+          width: 560,
           maxWidth: 'calc(100vw - 40px)',
         }}
       >
-        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>New target</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>
-          Pick the kind of target and give it a name. You can change everything later.
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-          {(['exact', 'hunt', 'general_review'] as Kind[]).map((k) => {
-            const meta = KIND_META[k];
-            const disabled =
-              k === 'general_review' && existingGeneralReviewSites.size >= sources.length;
-            return (
-              <button
-                key={k}
-                onClick={() => !disabled && setKind(k)}
-                disabled={disabled}
-                style={{
-                  padding: '12px 14px',
-                  background:
-                    kind === k ? 'var(--bg-raised)' : 'var(--bg-input)',
-                  border: `1px solid ${kind === k ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: 6,
-                  textAlign: 'left',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                  opacity: disabled ? 0.4 : 1,
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{meta.label}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                  {meta.desc}
-                  {disabled && ' (all sources already have one)'}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-            Name
-          </div>
-          <input
-            className="input"
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={
-              kind === 'exact'
-                ? 'e.g. W211 E500'
-                : kind === 'hunt'
-                ? 'e.g. End-game IEMs'
-                : 'e.g. Daily mechmarket scan'
-            }
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && canCreate) {
-                onCreate(
-                  kind,
-                  name.trim(),
-                  kind === 'general_review' ? effectiveSite : undefined,
-                );
-              }
-            }}
+        {step === 'choose' && (
+          <ChooseStep
+            onPickManual={() => setStep('manual')}
+            onPickGenerate={() => setStep('generate')}
+            onCancel={onCancel}
           />
-        </div>
-
-        {kind === 'general_review' && (
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-              Source
-              <span style={{ color: 'var(--text-dim)', marginLeft: 8, fontSize: 11 }}>
-                — only one per source allowed
-              </span>
-            </div>
-            <select
-              className="select mono"
-              value={effectiveSite}
-              onChange={(e) => setSite(e.target.value)}
-            >
-              {availableSources.length === 0 ? (
-                <option value="">(no sources available)</option>
-              ) : (
-                availableSources.map(([s, meta]) => (
-                  <option key={s} value={s}>
-                    {meta.label}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
         )}
+        {step === 'manual' && (
+          <ManualStep
+            existingGeneralReviewSites={existingGeneralReviewSites}
+            onBack={() => setStep('choose')}
+            onCreate={onCreate}
+          />
+        )}
+        {step === 'generate' && (
+          <GenerateStep
+            onBack={() => setStep('choose')}
+            onAdopt={onAdopt}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
-        <div
-          style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}
+function ChooseStep({
+  onPickManual,
+  onPickGenerate,
+  onCancel,
+}: {
+  onPickManual: () => void;
+  onPickGenerate: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>New target</div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18 }}>
+        How would you like to set this up?
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <button
+          onClick={onPickManual}
+          style={{
+            padding: '16px 18px',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            cursor: 'pointer',
+          }}
         >
-          <button className="btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={
-              !canCreate ||
-              (kind === 'general_review' && !effectiveSite)
-            }
-            onClick={() =>
+          <Icon name="settings" size={20} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 2 }}>
+              Configure manually
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              Pick the type and name; fill in pricing, queries, sources yourself.
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={onPickGenerate}
+          style={{
+            padding: '16px 18px',
+            background:
+              'color-mix(in oklab, var(--accent) 8%, var(--bg-input))',
+            border: '1px solid color-mix(in oklab, var(--accent) 35%, var(--border))',
+            borderRadius: 6,
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            cursor: 'pointer',
+          }}
+        >
+          <Icon name="bell" size={20} className="" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 2 }}>
+              Generate from description
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              Describe what you're hunting for in plain English; the LLM fills in
+              the schema (sites, pricing, profile). You can edit before saving.
+            </div>
+          </div>
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+        <button className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </>
+  );
+}
+
+function ManualStep({
+  existingGeneralReviewSites,
+  onBack,
+  onCreate,
+}: {
+  existingGeneralReviewSites: Set<string>;
+  onBack: () => void;
+  onCreate: (kind: Kind, name: string, firstSite?: string) => void;
+}) {
+  const [kind, setKind] = useState<Kind>('exact');
+  const [name, setName] = useState('');
+  const [site, setSite] = useState<string>('hifishark');
+  const canCreate = name.trim().length > 0;
+
+  const sources = Object.entries(SCRAPER_META);
+  const availableSources = sources.filter(
+    ([s]) => kind !== 'general_review' || !existingGeneralReviewSites.has(s),
+  );
+  const firstAvailable = availableSources[0]?.[0];
+  const effectiveSite =
+    kind === 'general_review' && !availableSources.find(([s]) => s === site)
+      ? firstAvailable ?? site
+      : site;
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <button
+          className="btn btn-sm"
+          onClick={onBack}
+          style={{ padding: '4px 8px' }}
+        >
+          ←
+        </button>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>Configure manually</div>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 18, marginLeft: 36 }}>
+        Pick the kind of target and give it a name. You can change everything later.
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {(['exact', 'hunt', 'general_review'] as Kind[]).map((k) => {
+          const meta = KIND_META[k];
+          const disabled =
+            k === 'general_review' && existingGeneralReviewSites.size >= sources.length;
+          return (
+            <button
+              key={k}
+              onClick={() => !disabled && setKind(k)}
+              disabled={disabled}
+              style={{
+                padding: '12px 14px',
+                background: kind === k ? 'var(--bg-raised)' : 'var(--bg-input)',
+                border: `1px solid ${kind === k ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 6,
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 3,
+                opacity: disabled ? 0.4 : 1,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{meta.label}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                {meta.desc}
+                {disabled && ' (all sources already have one)'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+          Name
+        </div>
+        <input
+          className="input"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={
+            kind === 'exact'
+              ? 'e.g. W211 E500'
+              : kind === 'hunt'
+              ? 'e.g. End-game IEMs'
+              : 'e.g. Daily mechmarket scan'
+          }
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && canCreate) {
               onCreate(
                 kind,
                 name.trim(),
                 kind === 'general_review' ? effectiveSite : undefined,
-              )
+              );
             }
-          >
-            <Icon name="plus" size={12} /> Create
-          </button>
-        </div>
+          }}
+        />
       </div>
-    </div>
+
+      {kind === 'general_review' && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            Source
+            <span style={{ color: 'var(--text-dim)', marginLeft: 8, fontSize: 11 }}>
+              — only one per source allowed
+            </span>
+          </div>
+          <select
+            className="select mono"
+            value={effectiveSite}
+            onChange={(e) => setSite(e.target.value)}
+          >
+            {availableSources.length === 0 ? (
+              <option value="">(no sources available)</option>
+            ) : (
+              availableSources.map(([s, meta]) => (
+                <option key={s} value={s}>
+                  {meta.label}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+        <button className="btn" onClick={onBack}>
+          Back
+        </button>
+        <button
+          className="btn btn-primary"
+          disabled={!canCreate || (kind === 'general_review' && !effectiveSite)}
+          onClick={() =>
+            onCreate(
+              kind,
+              name.trim(),
+              kind === 'general_review' ? effectiveSite : undefined,
+            )
+          }
+        >
+          <Icon name="plus" size={12} /> Create
+        </button>
+      </div>
+    </>
+  );
+}
+
+function GenerateStep({
+  onBack,
+  onAdopt,
+}: {
+  onBack: () => void;
+  onAdopt: (parsed: Partial<PriceReference>) => void;
+}) {
+  const [description, setDescription] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!description.trim() || generating) return;
+    setError(null);
+    setGenerating(true);
+    setModel(null);
+    try {
+      const result = await api.generateTargetYaml(description.trim());
+      setModel(result.model);
+      let parsed: Partial<PriceReference>;
+      try {
+        const yamlObj = yaml.load(result.yaml);
+        if (!yamlObj || typeof yamlObj !== 'object') {
+          throw new Error('output was not an object');
+        }
+        parsed = yamlObj as Partial<PriceReference>;
+      } catch (e) {
+        throw new Error(`couldn't parse the model's YAML output: ${e}`);
+      }
+      if (!parsed.name) {
+        throw new Error('generated target has no name field');
+      }
+      onAdopt(parsed);
+    } catch (e) {
+      setError(String(e));
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <button
+          className="btn btn-sm"
+          onClick={onBack}
+          disabled={generating}
+          style={{ padding: '4px 8px' }}
+        >
+          ←
+        </button>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>Generate from description</div>
+      </div>
+      <div
+        style={{
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          marginBottom: 14,
+          marginLeft: 36,
+        }}
+      >
+        Describe what you're hunting for. Include brands/models, budget,
+        location preferences, anything to avoid. The more specific, the
+        better the result.
+      </div>
+
+      <textarea
+        className="textarea"
+        autoFocus
+        rows={7}
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        disabled={generating}
+        placeholder={`Examples:
+
+I want used Focal Aria 906 bookshelf speakers. US-based sellers only — shipping speakers internationally is risky. Boston area for local pickup.
+
+High-end IEMs with EST drivers, tribrid designs, under $2000 used. Brands I like: Empire Ears, Elysian, 64 Audio, Unique Melody. Not interested in budget chi-fi.`}
+        style={{ fontFamily: 'var(--font-sans)', fontSize: 13, lineHeight: 1.5 }}
+        onKeyDown={(e) => {
+          // Cmd/Ctrl+Enter to submit
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit();
+        }}
+      />
+
+      {error && (
+        <div className="error-banner" style={{ marginTop: 12 }}>
+          {error}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          marginTop: 14,
+        }}
+      >
+        {generating && (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12,
+              color: 'var(--text-muted)',
+            }}
+          >
+            <Icon name="refresh" size={12} className="pulse" />
+            Generating{model ? ` with ${model.split('/').pop()}` : '…'}
+          </div>
+        )}
+        <button className="btn" onClick={onBack} disabled={generating}>
+          Back
+        </button>
+        <button
+          className="btn btn-primary"
+          disabled={!description.trim() || generating}
+          onClick={submit}
+          title="Cmd/Ctrl + Enter"
+        >
+          <Icon name="play" size={12} /> {generating ? 'Generating…' : 'Generate'}
+        </button>
+      </div>
+    </>
   );
 }
 

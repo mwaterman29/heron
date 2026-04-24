@@ -59,4 +59,11 @@ export const api = {
   getAutostartEnabled: () => invoke<boolean>('get_autostart_enabled'),
   setAutostartEnabled: (enabled: boolean) =>
     invoke<void>('set_autostart_enabled', { enabled }),
+
+  // Target generation (LLM-assisted)
+  generateTargetYaml: (description: string) =>
+    invoke<{ yaml: string; model: string; duration_ms: number }>(
+      'generate_target_yaml',
+      { description },
+    ),
 };
