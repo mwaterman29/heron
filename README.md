@@ -1,5 +1,18 @@
 # Heron
 
+automatic scraper for used gear
+built originally for looking for focal aria 906 and w211 e500 at good price
+install via releases page
+needs open router key, currently only notifies via discord
+cost is like $0.14c a day for 8 targets / 4 searches a day w/ my personal config
+
+logo extracted from public domain picture of heron, then potrace-ified
+all code written by claude opus 4.6/4.7
+
+claude's stab at a readme below
+
+---
+
 A personal marketplace deal hunter. Scrapes 8 used-gear marketplaces on a
 schedule, runs every listing through an LLM evaluator against your custom
 price targets, and surfaces real deals to a triage queue. Runs as a Tauri
