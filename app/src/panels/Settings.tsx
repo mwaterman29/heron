@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import type { ScheduleConfig, SecretEntry } from '../types';
+import type { ScheduleConfig, SecretEntry, SidecarSummary } from '../types';
 import { Icon, Toggle } from '../components/Pills';
-import { MODEL_CATALOG, findModel, formatDailyCost } from '../models';
+import {
+  MODEL_CATALOG,
+  costForRun,
+  findModel,
+  formatUsd,
+  heuristicCostPerRun,
+  runsPerDay,
+} from '../models';
 
 const FREQ_OPTIONS = [
   { value: 15, label: '15m' },
@@ -24,19 +31,22 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
   const [dirty, setDirty] = useState(false);
   const [dataOpMsg, setDataOpMsg] = useState<string | null>(null);
   const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [lastSummary, setLastSummary] = useState<SidecarSummary | null>(null);
 
   const loadAll = async () => {
     try {
-      const [s, sch, runs, auto] = await Promise.all([
+      const [s, sch, runs, auto, status] = await Promise.all([
         api.readSecrets(false),
         api.getSchedule(),
         api.getNextRuns(3),
         api.getAutostartEnabled().catch(() => false),
+        api.getStatus().catch(() => null),
       ]);
       setSecrets(s);
       setSchedule(sch);
       setNextRuns(runs);
       setAutostart(auto);
+      setLastSummary(status?.last_summary ?? null);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -181,17 +191,6 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
       {/* ===== LLM Models ===== */}
       <div className="panel" style={{ padding: 24 }}>
         <div className="section-title">LLM models</div>
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--text-dim)',
-            marginBottom: 14,
-            marginTop: -4,
-          }}
-        >
-          Cost estimates assume ~100 listings per run with 3 pass-2 drill-downs. Real cost
-          varies with your targets.
-        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <ModelDropdown
             label="Primary model"
@@ -206,6 +205,11 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
             onChange={(v) => updateSecret('OPENROUTER_FALLBACK_MODEL', v)}
           />
         </div>
+        <CostEstimate
+          primaryModelId={getSecret('OPENROUTER_MODEL')?.value ?? ''}
+          schedule={schedule}
+          lastSummary={lastSummary}
+        />
       </div>
 
       {/* ===== Schedule ===== */}
@@ -418,6 +422,48 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
         </div>
       )}
 
+      {/* ===== Location ===== */}
+      <div className="panel" style={{ padding: 24 }}>
+        <div className="section-title">Location</div>
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--text-dim)',
+            marginBottom: 14,
+            marginTop: -4,
+          }}
+        >
+          Used by Craigslist (subdomain) and Facebook Marketplace (URL slug).
+          Other sources are national and ignore this.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <LabeledField
+            label="Region"
+            hint="Your Craigslist subdomain (e.g. 'boston', 'seattle', 'denver')"
+          >
+            <input
+              className="input mono"
+              value={getSecret('USER_LOCATION')?.value ?? ''}
+              onChange={(e) => updateSecret('USER_LOCATION', e.target.value)}
+              placeholder="boston"
+            />
+          </LabeledField>
+          <LabeledField
+            label="FB Marketplace location"
+            hint="Paste your FB Marketplace URL — we'll extract the slug. Blank = use Region."
+          >
+            <input
+              className="input mono"
+              value={getSecret('FBMP_LOCATION')?.value ?? ''}
+              onChange={(e) =>
+                updateSecret('FBMP_LOCATION', extractFbmpSlug(e.target.value))
+              }
+              placeholder="boston or 108472329193294"
+            />
+          </LabeledField>
+        </div>
+      </div>
+
       {/* ===== Browser ===== */}
       <div className="panel" style={{ padding: 24 }}>
         <div className="section-title">Browser</div>
@@ -440,6 +486,30 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
             onClick={() => {
               const current = getSecret('HEADLESS')?.value ?? 'true';
               updateSecret('HEADLESS', current === 'false' ? 'true' : 'false');
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 14,
+            paddingTop: 14,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>USD listings only</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+              Skip listings priced in non-USD currencies (yen, euro, etc.) before evaluation.
+            </div>
+          </div>
+          <Toggle
+            on={(getSecret('USD_ONLY')?.value ?? 'true') !== 'false'}
+            onClick={() => {
+              const current = getSecret('USD_ONLY')?.value ?? 'true';
+              updateSecret('USD_ONLY', current === 'false' ? 'true' : 'false');
             }}
           />
         </div>
@@ -556,6 +626,18 @@ export function Settings({ keysReady: _keysReady }: { keysReady: boolean }) {
   );
 }
 
+/**
+ * Extract the FB Marketplace location slug from either a pasted URL like
+ * `https://www.facebook.com/marketplace/boston/search?...` or a raw slug.
+ * Handles city slugs (`boston`) and numeric area IDs (`108472329193294`).
+ * If no marketplace path is found, returns the trimmed input as-is so the
+ * user can also type a slug directly.
+ */
+function extractFbmpSlug(input: string): string {
+  const m = input.match(/marketplace\/([^/?#\s]+)/i);
+  return (m ? m[1] : input).trim();
+}
+
 function LabeledField({
   label,
   hint,
@@ -628,6 +710,138 @@ function MaskedField({
   );
 }
 
+function CostEstimate({
+  primaryModelId,
+  schedule,
+  lastSummary,
+}: {
+  primaryModelId: string;
+  schedule: ScheduleConfig | null;
+  lastSummary: SidecarSummary | null;
+}) {
+  const model = findModel(primaryModelId);
+  if (!model || !schedule) return null;
+
+  const hasRealTokens =
+    !!lastSummary
+    && (lastSummary.tokens_input ?? 0) > 0
+    && (lastSummary.tokens_output ?? 0) > 0;
+
+  const perRunCost = hasRealTokens
+    ? costForRun(model, lastSummary!.tokens_input!, lastSummary!.tokens_output!)
+    : heuristicCostPerRun(model);
+
+  const runs = runsPerDay(schedule);
+  const dailyCost = perRunCost * runs;
+  const monthlyCost = dailyCost * 30;
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 14,
+        background: 'var(--bg-base)',
+        border: '1px solid var(--border)',
+        borderRadius: 4,
+      }}
+    >
+      <div
+        className="mono"
+        style={{
+          fontSize: 10,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          marginBottom: 10,
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span>Running cost estimate</span>
+        <span style={{ color: hasRealTokens ? 'var(--ok)' : 'var(--text-dim)' }}>
+          {hasRealTokens ? '● From last run' : '○ Heuristic'}
+        </span>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 12,
+        }}
+      >
+        <CostCell label="Per run" value={formatUsd(perRunCost)} />
+        <CostCell
+          label="Per day"
+          value={runs > 0 ? formatUsd(dailyCost) : '—'}
+          sub={runs > 0 ? `${runs.toFixed(1)} runs/day` : 'schedule off'}
+        />
+        <CostCell
+          label="Per month"
+          value={runs > 0 ? formatUsd(monthlyCost) : '—'}
+          sub="at current cadence"
+        />
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--text-dim)',
+          marginTop: 10,
+        }}
+      >
+        {hasRealTokens ? (
+          <>
+            Based on last run:{' '}
+            {(lastSummary!.tokens_input ?? 0).toLocaleString()} input +{' '}
+            {(lastSummary!.tokens_output ?? 0).toLocaleString()} output tokens.
+          </>
+        ) : (
+          <>
+            Heuristic — assumes ~100 listings per run with 3 pass-2 drill-downs.
+            Real numbers replace this after the first run.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CostCell({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          marginBottom: 3,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="mono"
+        style={{ fontSize: 18, color: 'var(--text-primary)', fontWeight: 500 }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 10.5, color: 'var(--text-dim)', marginTop: 2 }}>
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ModelDropdown({
   label,
   hint,
@@ -659,7 +873,7 @@ function ModelDropdown({
         <option value="">— unset —</option>
         {MODEL_CATALOG.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.label} · {formatDailyCost(m)}
+            {m.label}
           </option>
         ))}
         <option value="__custom__">Custom model ID…</option>

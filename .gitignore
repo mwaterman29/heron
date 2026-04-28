@@ -25,6 +25,7 @@ app/src-tauri/binaries/*.bat
 # Schedule config (created at runtime in dev, lives in config dir)
 schedule.json
 scheduler-state.json
+last-summary.json
 
 # Runtime backups dir (created by the Export button in Settings)
 backups/

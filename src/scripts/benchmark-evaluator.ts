@@ -8,60 +8,18 @@
  */
 
 import 'dotenv/config';
-import yaml from 'js-yaml';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { getDb } from '../db.js';
+import { getDb, type SeenItemRow } from '../db.js';
 import { loadConfig } from '../config.js';
+import {
+  SYSTEM_PROMPT,
+  SYSTEM_PROMPT_CATEGORY_HUNT,
+  buildUserPrompt,
+  buildCategoryHuntUserPrompt,
+} from '../evaluator.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-
-// Pull the real SYSTEM_PROMPT text out of evaluator.ts. Kept inline here so
-// this benchmark is self-contained and can be tweaked without touching
-// production code. Matches evaluator.ts SYSTEM_PROMPT at the time of writing.
-const SYSTEM_PROMPT = `You are a marketplace deal evaluator. You will receive:
-1. A REFERENCE section describing the item being searched for, including pricing tiers (IN USD) and any shipping_notes geographic constraint.
-2. One or more LISTING entries scraped from marketplace sites.
-
-For each listing, respond with a JSON object in this exact schema:
-{
-  "evaluations": [
-    {
-      "listing_index": 0,
-      "relevant": true,
-      "deal_tier": "steal|deal|fair|overpriced|irrelevant",
-      "confidence": 0.0,
-      "extracted_price": null,
-      "extracted_currency": "USD|EUR|GBP|...",
-      "reasoning": "1-2 sentence explanation",
-      "red_flags": [],
-      "positive_signals": [],
-      "grail_match": false
-    }
-  ]
-}
-
-CURRENCY + USD CONVERSION (CRITICAL):
-- The reference pricing tiers (msrp, fair_used, deal_price, steal_price) are all in USD.
-- Each listing may be in any currency (€, £, $, SEK, NOK, DKK, CAD, etc.). Identify the currency.
-- "extracted_price" MUST be the listing price CONVERTED TO USD using approximate current exchange rates.
-- Compare extracted_price (USD) against the reference tiers (USD) when choosing deal_tier.
-- If you cannot determine either the price or a reasonable USD conversion, mark the listing irrelevant.
-
-SHIPPING / GEOGRAPHY:
-- If the reference has a shipping_notes field, it describes geography/landed-cost constraints the buyer cares about.
-- Respect it. A listing that violates the constraint should be downgraded or marked irrelevant per the constraint's instruction.
-
-RELEVANCE:
-- If the listing is not the reference item, mark as "irrelevant".
-
-TIER DEFINITIONS (all USD-to-USD):
-- "steal" = significantly below deal_price
-- "deal" = at or below deal_price
-- "fair" = between deal_price and fair_used
-- "overpriced" = above fair_used
-
-OUTPUT: Respond ONLY with the JSON object, no markdown fences, no preamble.`;
 
 // Models to test
 const MODELS = [
@@ -75,18 +33,7 @@ const MODELS = [
   },
 ];
 
-interface Row {
-  id: string;
-  site: string;
-  search_id: string;
-  title: string | null;
-  price: number | null;
-  currency: string | null;
-  location: string | null;
-  raw_text: string | null;
-  deal_tier: string | null;
-  llm_reasoning: string | null;
-}
+type Row = SeenItemRow;
 
 interface Evaluation {
   listing_index: number;
@@ -108,33 +55,13 @@ interface ModelRun {
   costUsd: number;
 }
 
-function formatListings(rows: Row[]): string {
-  return rows.map((l, i) => {
-    const priceStr =
-      l.price != null ? `${l.currency ?? ''}${l.price}`.trim() : '(unknown)';
-    return `[${i}] Source: ${l.site}
-Title: ${l.title ?? ''}
-Price (raw): ${priceStr}
-Currency (detected): ${l.currency ?? '(unknown)'}
-Location: ${l.location ?? ''}
-Text: ${(l.raw_text ?? '').slice(0, 400)}`;
-  }).join('\n\n');
-}
-
 async function callModel(
   model: (typeof MODELS)[number],
-  reference: unknown,
-  rows: Row[],
+  systemPrompt: string,
+  userPrompt: string,
 ): Promise<ModelRun> {
   const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPEN_ROUTER_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
-
-  const user = `=== REFERENCE ===
-${yaml.dump(reference)}
-=== LISTINGS ===
-${formatListings(rows)}
-
-Remember: extracted_price MUST be in USD. Compare USD-to-USD against the reference tiers. Respect shipping_notes if present.`;
 
   const start = Date.now();
   const ctrl = new AbortController();
@@ -153,8 +80,8 @@ Remember: extracted_price MUST be in USD. Compare USD-to-USD against the referen
       body: JSON.stringify({
         model: model.id,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: user },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
         ],
         temperature: 0.1,
         response_format: { type: 'json_object' },
@@ -231,15 +158,19 @@ async function main() {
   // Load the reference config
   const { references } = loadConfig(process.cwd());
 
-  // Pull all evaluated listings from the DB
+  // Pull a stratified sample of evaluated listings: up to 30 per site so the
+  // per-source breakdown isn't dominated by FBMP/eBay (which have ~700 rows
+  // each in the user's DB vs. ~10 for the Reddit scrapers).
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, site, search_id, title, price, currency, location, raw_text, deal_tier, llm_reasoning
-       FROM seen_items
-       WHERE evaluated = 1
-       ORDER BY last_seen_at DESC
-       LIMIT 20`,
+      `SELECT * FROM (
+         SELECT *, ROW_NUMBER() OVER (
+           PARTITION BY site ORDER BY last_seen_at DESC
+         ) AS rn
+         FROM seen_items
+         WHERE evaluated = 1
+       ) WHERE rn <= 30`,
     )
     .all() as Row[];
 
@@ -282,22 +213,20 @@ async function main() {
 
     console.error(`\n=== batch: ${searchId} (${groupRows.length} listings, ref: ${ref.id}) ===`);
 
-    // Strip price_history context — the benchmark only has the row text
-    const refForPrompt = {
-      id: ref.id,
-      name: ref.name,
-      type: ref.type,
-      msrp: ref.msrp,
-      fair_used: ref.fair_used,
-      deal_price: ref.deal_price,
-      steal_price: ref.steal_price,
-      grail: ref.grail,
-      shipping_notes: ref.shipping_notes,
-      notes: ref.notes,
-      profile: ref.profile,
-    };
+    // Pick the same prompt + builder the live evaluator would have used for
+    // this reference, so we benchmark what's actually in production rather
+    // than a generic stand-in.
+    const isCategoryHunt = ref.type !== 'general_review' && !!ref.profile;
+    const systemPrompt = isCategoryHunt
+      ? SYSTEM_PROMPT_CATEGORY_HUNT
+      : SYSTEM_PROMPT;
+    const userPrompt = isCategoryHunt
+      ? buildCategoryHuntUserPrompt(ref, groupRows)
+      : buildUserPrompt(ref, groupRows);
 
-    const runs = await Promise.all(MODELS.map((m) => callModel(m, refForPrompt, groupRows)));
+    const runs = await Promise.all(
+      MODELS.map((m) => callModel(m, systemPrompt, userPrompt)),
+    );
 
     for (const run of runs) {
       const tag = run.error
@@ -366,6 +295,67 @@ async function main() {
     if (disagreements.length > 0) {
       for (const d of disagreements) console.error(d);
     }
+  }
+
+  // ==== Per-site breakdown ====
+  // The whole point of this run: per-source quality. Each row's site lives on
+  // br.rows[ev.listing_index].site. We compute exact + deal-sign agreement
+  // and the verdict distribution per site, per model.
+  console.error('\n=== Per-site agreement (deal-sign) ===\n');
+  const sites = Array.from(new Set(rows.map((r) => r.site))).sort();
+  const headerCols = MODELS.map((m) => m.label.slice(0, 14).padStart(14)).join(' ');
+  console.error(`  ${'site'.padEnd(14)}  ${'n'.padStart(4)}  ${headerCols}`);
+  for (const site of sites) {
+    const cells: string[] = [];
+    let n = 0;
+    for (const m of MODELS) {
+      let total = 0;
+      let signAgree = 0;
+      for (const br of allResults) {
+        const run = br.runs.find((x) => x.modelId === m.id);
+        if (!run?.evaluations) continue;
+        for (const ev of run.evaluations) {
+          const dbRow = br.rows[ev.listing_index];
+          if (!dbRow || dbRow.site !== site || !dbRow.deal_tier) continue;
+          total++;
+          const modelIsDeal = ev.deal_tier === 'steal' || ev.deal_tier === 'deal';
+          const dbIsDeal = dbRow.deal_tier === 'steal' || dbRow.deal_tier === 'deal';
+          if (modelIsDeal === dbIsDeal) signAgree++;
+        }
+      }
+      n = Math.max(n, total);
+      const pct = total ? Math.round((signAgree / total) * 100) : 0;
+      cells.push(`${signAgree}/${total} (${pct}%)`.padStart(14));
+    }
+    console.error(`  ${site.padEnd(14)}  ${String(n).padStart(4)}  ${cells.join(' ')}`);
+  }
+
+  console.error('\n=== Per-site verdict distribution (model = primary 3.1 Flash Lite) ===\n');
+  const primaryId = 'google/gemini-3.1-flash-lite-preview-20260303';
+  const tiers = ['steal', 'deal', 'fair', 'overpriced', 'irrelevant'] as const;
+  const headerTiers = tiers.map((t) => t.padStart(11)).join(' ');
+  console.error(`  ${'site'.padEnd(14)}  ${'n'.padStart(4)}  ${headerTiers}`);
+  for (const site of sites) {
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const br of allResults) {
+      const run = br.runs.find((x) => x.modelId === primaryId);
+      if (!run?.evaluations) continue;
+      for (const ev of run.evaluations) {
+        const dbRow = br.rows[ev.listing_index];
+        if (!dbRow || dbRow.site !== site) continue;
+        counts[ev.deal_tier] = (counts[ev.deal_tier] ?? 0) + 1;
+        total++;
+      }
+    }
+    const cells = tiers
+      .map((t) => {
+        const c = counts[t] ?? 0;
+        const pct = total ? Math.round((c / total) * 100) : 0;
+        return `${c} (${pct}%)`.padStart(11);
+      })
+      .join(' ');
+    console.error(`  ${site.padEnd(14)}  ${String(total).padStart(4)}  ${cells}`);
   }
 
   // ==== Write full report ====

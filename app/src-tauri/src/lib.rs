@@ -12,6 +12,21 @@ mod updater;
 use sidecar::AppState;
 use tauri::Manager;
 
+/// Embedded starter config written on first launch when the user has no
+/// existing price-reference.yaml. Empty `references` list — the user adds
+/// targets via the Targets panel's "Generate from description" flow or by
+/// editing the file directly. Without this, loadConfig() in the sidecar
+/// would throw "Missing config/price-reference.yaml" on fresh installs.
+const STARTER_PRICE_REFERENCE: &str = r#"# Heron — your local marketplace deal hunter.
+# Add targets below (or use the "Generate from description" button in the
+# Targets panel). Each reference describes one item or category to hunt for.
+
+user:
+  location: boston  # Default fallback. Override via Settings → Location.
+
+references: []
+"#;
+
 fn resolve_config_dir(app: &tauri::App) -> std::path::PathBuf {
     // In debug builds, point at the deal-hunter project root so we pick up
     // the existing config/, data/, .env during development.
@@ -27,12 +42,25 @@ fn resolve_config_dir(app: &tauri::App) -> std::path::PathBuf {
         }
     }
 
-    // Release: use OS config dir (%APPDATA%/deal-hunter on Windows)
+    // Release: use OS config dir (%APPDATA%/com.heron.app on Windows)
     let dir = app
         .path()
         .app_config_dir()
         .expect("Failed to resolve app config dir");
     std::fs::create_dir_all(&dir).expect("Failed to create app config dir");
+
+    // First-launch bootstrap: ensure config/price-reference.yaml exists so the
+    // sidecar can load it on the user's first Run Now click. Idempotent —
+    // we only write the starter when the file is missing entirely.
+    let cfg_subdir = dir.join("config");
+    let _ = std::fs::create_dir_all(&cfg_subdir);
+    let yaml_path = cfg_subdir.join("price-reference.yaml");
+    if !yaml_path.exists() {
+        if let Err(e) = std::fs::write(&yaml_path, STARTER_PRICE_REFERENCE) {
+            log::warn!("Failed to seed starter price-reference.yaml: {}", e);
+        }
+    }
+
     dir
 }
 

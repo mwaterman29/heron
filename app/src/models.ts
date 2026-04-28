@@ -129,20 +129,62 @@ export function findModel(id: string | null | undefined): ModelOption | null {
 }
 
 /**
- * Estimate the cost (USD) of a typical daily run using this model.
- * Assumes: 100 listings scraped → 12 pass-1 batches × (13K in + 5K out) + 3 pass-2 drill-downs.
- * Returns a rough dollar figure; useful for rough comparison, not billing.
+ * Heuristic token use for a single run when no real run data is available.
+ * Matches the run shape documented at the top of this file.
  */
-export function estimateDailyCost(m: ModelOption): number {
-  const pass1InTok = 12 * 13_000;
-  const pass1OutTok = 12 * 5_000;
-  const pass2InTok = 3 * 4_000;
-  const pass2OutTok = 3 * 400;
-  const inputCost = ((pass1InTok + pass2InTok) / 1_000_000) * m.input_per_1m;
-  const outputCost = ((pass1OutTok + pass2OutTok) / 1_000_000) * m.output_per_1m;
-  return inputCost + outputCost;
+const HEURISTIC_INPUT_TOKENS = 12 * 13_000 + 3 * 4_000; // ~168K
+const HEURISTIC_OUTPUT_TOKENS = 12 * 5_000 + 3 * 400; // ~61K
+
+/** Compute USD cost of a single run given token counts and a model. */
+export function costForRun(
+  m: ModelOption,
+  tokensIn: number,
+  tokensOut: number,
+): number {
+  return (tokensIn / 1_000_000) * m.input_per_1m
+    + (tokensOut / 1_000_000) * m.output_per_1m;
 }
 
+/** Heuristic cost per run when no real token data is available yet. */
+export function heuristicCostPerRun(m: ModelOption): number {
+  return costForRun(m, HEURISTIC_INPUT_TOKENS, HEURISTIC_OUTPUT_TOKENS);
+}
+
+/**
+ * Number of runs per day given the schedule. Respects active-hours window
+ * if configured; otherwise assumes 24h. Returns 0 if disabled.
+ */
+export function runsPerDay(sched: {
+  enabled: boolean;
+  interval_minutes: number;
+  active_hour_start: number | null;
+  active_hour_end: number | null;
+}): number {
+  if (!sched.enabled || sched.interval_minutes <= 0) return 0;
+  let activeHours = 24;
+  if (sched.active_hour_start != null && sched.active_hour_end != null) {
+    const s = sched.active_hour_start;
+    const e = sched.active_hour_end;
+    activeHours = e > s ? e - s : 24 - s + e; // wrap-around
+    if (activeHours <= 0) activeHours = 24;
+  }
+  return (activeHours * 60) / sched.interval_minutes;
+}
+
+export function formatUsd(c: number): string {
+  if (c < 0.001) return '< $0.001';
+  if (c < 0.01) return `$${c.toFixed(4)}`;
+  if (c < 0.10) return `$${c.toFixed(3)}`;
+  if (c < 10) return `$${c.toFixed(2)}`;
+  return `$${c.toFixed(1)}`;
+}
+
+/** @deprecated Kept for compatibility; prefer heuristicCostPerRun + runsPerDay. */
+export function estimateDailyCost(m: ModelOption): number {
+  return heuristicCostPerRun(m);
+}
+
+/** @deprecated No longer shown in UI. */
 export function formatDailyCost(m: ModelOption): string {
   const c = estimateDailyCost(m);
   if (c < 0.01) return '< $0.01/day';

@@ -6,7 +6,7 @@ import type { DetailPage } from './scrapers/base.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const SYSTEM_PROMPT = `You are a marketplace deal evaluator. You will receive:
+export const SYSTEM_PROMPT = `You are a marketplace deal evaluator. You will receive:
 1. A REFERENCE section describing the item being searched for, including pricing tiers (IN USD) and any shipping_notes geographic constraint.
 2. One or more LISTING entries scraped from marketplace sites.
 
@@ -71,7 +71,7 @@ TIER DEFINITIONS (all USD-to-USD):
 OUTPUT:
 - Respond ONLY with the JSON object, no markdown fences, no preamble.`;
 
-const SYSTEM_PROMPT_CATEGORY_HUNT = `You are a marketplace deal evaluator in CATEGORY HUNT mode. Unlike the standard mode where you compare listings against a single reference item with fixed pricing tiers, here you evaluate each listing against ITS OWN typical used market value.
+export const SYSTEM_PROMPT_CATEGORY_HUNT = `You are a marketplace deal evaluator in CATEGORY HUNT mode. Unlike the standard mode where you compare listings against a single reference item with fixed pricing tiers, here you evaluate each listing against ITS OWN typical used market value.
 
 You will receive:
 1. A BUYER PROFILE describing what the buyer is looking for: their taste preferences, budget range, brands/models of interest, and exclusions.
@@ -205,7 +205,7 @@ Text: ${l.raw_text ?? ''}`;
   }).join('\n\n');
 }
 
-function buildUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
+export function buildUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
   const refYaml = yaml.dump(reference);
   return `=== REFERENCE ===
 ${refYaml}
@@ -215,7 +215,7 @@ ${formatListingBlocks(listings)}
 Remember: extracted_price MUST be in USD. Compare USD-to-USD against the reference tiers. Respect shipping_notes if present.`;
 }
 
-function buildCategoryHuntUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
+export function buildCategoryHuntUserPrompt(reference: PriceReference, listings: SeenItemRow[]): string {
   return `=== BUYER PROFILE ===
 ${reference.profile ?? ''}
 
@@ -299,6 +299,22 @@ function parseAndValidate(raw: string, listingCount: number): LLMEvaluation[] {
   }));
 }
 
+// Per-run token accumulator. Reset at the start of each run via
+// resetRunTokens(); read at the end via getRunTokens() to populate the
+// summary JSON. Module-level state is fine because the sidecar process is
+// a single run: orchestrator → exit.
+let runTokensInput = 0;
+let runTokensOutput = 0;
+
+export function resetRunTokens(): void {
+  runTokensInput = 0;
+  runTokensOutput = 0;
+}
+
+export function getRunTokens(): { input: number; output: number } {
+  return { input: runTokensInput, output: runTokensOutput };
+}
+
 async function callOpenRouter(model: string, system: string, user: string): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPEN_ROUTER_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY (or OPEN_ROUTER_KEY) is not set');
@@ -337,7 +353,14 @@ async function callOpenRouter(model: string, system: string, user: string): Prom
 
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
+  // Accumulate tokens for this run. Per-call costs roll up in index.ts via
+  // getRunTokens() at the end. OpenRouter's `usage` field follows the same
+  // shape as the OpenAI API.
+  runTokensInput += data.usage?.prompt_tokens ?? 0;
+  runTokensOutput += data.usage?.completion_tokens ?? 0;
+
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('OpenRouter response missing content');
   return content;

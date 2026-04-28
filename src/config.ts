@@ -144,6 +144,10 @@ export function loadConfig(root: string = process.cwd()): {
   }
   const refsFile = loadYaml<ReferencesFile>(refPath);
   const user: UserProfile = refsFile.user ?? {};
+  // USER_LOCATION env var (set via Settings UI) overrides the YAML default
+  // so users can configure their region without editing config files.
+  const envLocation = process.env.USER_LOCATION?.trim();
+  if (envLocation) user.location = envLocation;
 
   const references = new Map<string, PriceReference>();
   for (const r of refsFile.references) references.set(r.id, r);

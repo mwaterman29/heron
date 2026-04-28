@@ -10,6 +10,8 @@ export interface SidecarSummary {
   notifications_sent: number;
   errors: string[];
   duration_ms: number;
+  tokens_input?: number;
+  tokens_output?: number;
 }
 
 export interface Status {

@@ -19,6 +19,14 @@ pub struct SidecarSummary {
     pub notifications_sent: u32,
     pub errors: Vec<String>,
     pub duration_ms: u64,
+    /// LLM token totals across the whole run (pass-1 + pass-2). Default 0
+    /// for compatibility with summaries from sidecars that pre-date this
+    /// field. Used by the Settings cost estimate to compute per-run + daily
+    /// dollar figures from real workload data instead of heuristics.
+    #[serde(default)]
+    pub tokens_input: u64,
+    #[serde(default)]
+    pub tokens_output: u64,
 }
 
 pub struct AppState {
@@ -33,10 +41,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config_dir: std::path::PathBuf) -> Self {
+        let persisted = read_persisted_summary(&config_dir);
         Self {
             config_dir,
             sidecar_running: AtomicBool::new(false),
-            last_summary: Mutex::new(None),
+            last_summary: Mutex::new(persisted),
             current_activity: Mutex::new(None),
         }
     }
@@ -44,6 +53,22 @@ impl AppState {
 
 const SUMMARY_PREFIX: &str = "__DEAL_HUNTER_SUMMARY__";
 const ACTIVITY_PREFIX: &str = "__HERON_ACTIVITY__";
+const LAST_SUMMARY_FILE: &str = "last-summary.json";
+
+/// Read the persisted last summary from disk so the Settings cost estimate
+/// has real token data even on a fresh app launch (before any new run).
+pub fn read_persisted_summary(config_dir: &std::path::Path) -> Option<SidecarSummary> {
+    std::fs::read_to_string(config_dir.join(LAST_SUMMARY_FILE))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+fn write_persisted_summary(config_dir: &std::path::Path, summary: &SidecarSummary) {
+    let path = config_dir.join(LAST_SUMMARY_FILE);
+    if let Ok(content) = serde_json::to_string_pretty(summary) {
+        let _ = std::fs::write(&path, content);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RunMode {
@@ -127,6 +152,7 @@ pub fn spawn(app: AppHandle, mode: RunMode) -> Result<(), String> {
                             Ok(summary) => {
                                 let state = app_clone.state::<AppState>();
                                 *state.last_summary.lock().unwrap() = Some(summary.clone());
+                                write_persisted_summary(&state.config_dir, &summary);
                                 let _ = app_clone.emit("sidecar-summary", &summary);
                             }
                             Err(e) => log::warn!("Failed to parse summary JSON: {}", e),

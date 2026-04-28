@@ -15,6 +15,9 @@ const MANAGED_KEYS: &[&str] = &[
     "HEADLESS",
     "SCRAPE_DELAY_MIN",
     "SCRAPE_DELAY_MAX",
+    "USD_ONLY",
+    "USER_LOCATION",
+    "FBMP_LOCATION",
 ];
 
 /// Keys that should be masked when returned to the UI (show only last 4 chars).

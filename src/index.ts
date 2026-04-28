@@ -9,12 +9,13 @@ import {
   markPass2,
   updateThumbnail,
   upsertListing,
+  type RawListing,
   type SeenItemRow,
   type Verdict,
 } from './db.js';
 import { getScraper, listRegisteredSites } from './scrapers/index.js';
 import { defaultScraperConfig, type DetailPage } from './scrapers/base.js';
-import { chunk, evaluateBatch, evaluateDetail } from './evaluator.js';
+import { chunk, evaluateBatch, evaluateDetail, getRunTokens, resetRunTokens } from './evaluator.js';
 import { pickNotifier, prepareDigest, type DealPayload } from './notifier.js';
 
 interface CliFlags {
@@ -90,6 +91,20 @@ function collectDeal(
   digest.push({ listing, verdict, reference });
 }
 
+/**
+ * Detect listings that are clearly already-sold from URL or title alone,
+ * before they consume an LLM evaluation. Conservative — false negatives are
+ * fine (the LLM is the second line of defense), but false positives drop
+ * real items, so we only match unambiguous patterns:
+ *  - URL slug starting with `/sold-` or `/sold_` (head-fi convention).
+ *  - Title leading with `SOLD`, `[SOLD]`, `(SOLD)` etc.
+ */
+function looksSold(raw: RawListing): boolean {
+  if (/\/sold[-_]/i.test(raw.url)) return true;
+  if (raw.title && /^\s*[\[(]?\s*sold\b/i.test(raw.title)) return true;
+  return false;
+}
+
 async function main() {
   const flags = parseFlags(process.argv.slice(2));
 
@@ -111,6 +126,8 @@ async function main() {
   let dealsFound = 0;
   let notificationsSent = 0;
   const errors: string[] = [];
+  // Token accumulator lives in evaluator.ts; reset at the top of every run.
+  resetRunTokens();
 
   logger.info({ flags, registered: listRegisteredSites() }, 'deal-hunter starting');
 
@@ -122,6 +139,14 @@ async function main() {
     if (flags.site && s.site !== flags.site) return false;
     return true;
   });
+
+  // USD_ONLY: skip listings priced in non-USD currencies before they hit the
+  // DB or the LLM. Default ON — most users find FX-converted prices more
+  // confusing than useful. Null currency means we couldn't extract a price;
+  // those pass through and get marked irrelevant by the LLM.
+  const usdOnly = (process.env.USD_ONLY ?? 'true') !== 'false';
+  let skippedNonUsd = 0;
+  let skippedSold = 0;
 
   if (selected.length === 0) {
     logger.warn('no searches matched filters — exiting');
@@ -154,6 +179,14 @@ async function main() {
 
     listingsScraped += listings.length;
     for (const raw of listings) {
+      if (usdOnly && raw.currency != null && raw.currency !== 'USD') {
+        skippedNonUsd++;
+        continue;
+      }
+      if (looksSold(raw)) {
+        skippedSold++;
+        continue;
+      }
       const result = upsertListing(search.id, raw);
       if (result.status === 'new') {
         newListings++;
@@ -171,6 +204,13 @@ async function main() {
         queueByRef.set(search.reference_id, list);
       }
     }
+  }
+
+  if (skippedNonUsd > 0) {
+    logger.info({ skippedNonUsd }, 'skipped non-USD listings (USD_ONLY filter)');
+  }
+  if (skippedSold > 0) {
+    logger.info({ skippedSold }, 'skipped listings that look already-sold');
   }
 
   if (flags.scraperOnly) {
@@ -411,6 +451,7 @@ function emitActivity(text: string): void {
 }
 
 function emitSummary(c: SummaryCounters): void {
+  const tokens = getRunTokens();
   const summary = {
     status: c.errors.length === 0 ? 'success' : 'partial',
     timestamp: new Date().toISOString(),
@@ -421,6 +462,8 @@ function emitSummary(c: SummaryCounters): void {
     notifications_sent: c.notificationsSent,
     errors: c.errors,
     duration_ms: Date.now() - c.runStart,
+    tokens_input: tokens.input,
+    tokens_output: tokens.output,
   };
   process.stdout.write(`\n__DEAL_HUNTER_SUMMARY__${JSON.stringify(summary)}\n`);
 }

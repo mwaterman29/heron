@@ -71,6 +71,7 @@ function ensureDir(filePath: string) {
 let db: DatabaseType | null = null;
 let stmts: {
   get: Statement;
+  findByTitleKey: Statement;
   insert: Statement;
   touch: Statement;
   insertPriceHistory: Statement;
@@ -156,6 +157,21 @@ CREATE TABLE IF NOT EXISTS price_history (
 
   stmts = {
     get: db.prepare('SELECT * FROM seen_items WHERE id = ?'),
+    // Cross-site title dedup: find an existing row with the same trimmed/case-
+    // insensitive title + same price + same currency. Used by upsertListing
+    // before falling through to insert, so a re-post of the same item from a
+    // different URL (or even a different site) is treated as a re-seen of the
+    // first row instead of a fresh listing that re-pays LLM tokens.
+    findByTitleKey: db.prepare(`
+      SELECT * FROM seen_items
+      WHERE TRIM(title) = ? COLLATE NOCASE
+        AND price = ?
+        AND currency = ?
+        AND title IS NOT NULL
+        AND price IS NOT NULL
+      ORDER BY first_seen_at ASC
+      LIMIT 1
+    `),
     insert: db.prepare(`
       INSERT INTO seen_items (
         id, site, search_id, title, price, currency, url, location, raw_text,
@@ -210,6 +226,49 @@ CREATE TABLE IF NOT EXISTS price_history (
        WHERE id = @id AND (thumbnail_url IS NULL OR thumbnail_url = '')`,
     ),
   };
+
+  backfillDedupByTitle();
+}
+
+/**
+ * One-shot cleanup of pre-existing duplicate rows that share a normalized
+ * (title, price, currency). The new title-key dedup at upsertListing only
+ * catches future duplicates; rows inserted before that change is deployed
+ * sit in the queue forever. We collapse each dupe group to a single row,
+ * preferring the already-evaluated copy so we don't lose LLM verdicts, then
+ * falling back to the oldest. Idempotent: if there are no dupes, this is a
+ * no-op.
+ */
+function backfillDedupByTitle(): void {
+  const ids = db!
+    .prepare(
+      `SELECT id FROM (
+         SELECT id, ROW_NUMBER() OVER (
+           PARTITION BY TRIM(LOWER(title)), price, currency
+           ORDER BY evaluated DESC, first_seen_at ASC, id ASC
+         ) AS rn
+         FROM seen_items
+         WHERE title IS NOT NULL
+           AND price IS NOT NULL
+           AND price > 0
+           AND currency IS NOT NULL
+       ) WHERE rn > 1`,
+    )
+    .all() as Array<{ id: string }>;
+
+  if (ids.length === 0) return;
+
+  const delHistory = db!.prepare('DELETE FROM price_history WHERE item_id = ?');
+  const delItem = db!.prepare('DELETE FROM seen_items WHERE id = ?');
+  const tx = db!.transaction((rows: Array<{ id: string }>) => {
+    for (const r of rows) {
+      delHistory.run(r.id);
+      delItem.run(r.id);
+    }
+  });
+  tx(ids);
+  // eslint-disable-next-line no-console
+  console.log(`[db] backfill dedup: removed ${ids.length} duplicate rows`);
 }
 
 export function parsePrice(raw: string | null | undefined): number | null {
@@ -237,6 +296,22 @@ export function upsertListing(searchId: string, listing: RawListing): UpsertResu
   const existing = s.get.get(id) as SeenItemRow | undefined;
 
   if (!existing) {
+    // Cross-site title dedup: before inserting as a fresh row, check whether
+    // an existing row already has the same title + price + currency. If yes,
+    // this is a re-post (cross-region Craigslist, cross-site duplicate, etc.)
+    // — treat it as a re-seen of the canonical row so we don't re-evaluate.
+    const titleKey = listing.title?.trim();
+    if (titleKey && price != null && listing.currency) {
+      const aliased = s.findByTitleKey.get(titleKey, price, listing.currency) as
+        | SeenItemRow
+        | undefined;
+      if (aliased) {
+        s.touch.run({ id: aliased.id, price, now });
+        const row = s.get.get(aliased.id) as SeenItemRow;
+        return { status: 'reseen', row, priceChanged: false, priceDropPct: 0 };
+      }
+    }
+
     s.insert.run({
       id,
       site: listing.source,

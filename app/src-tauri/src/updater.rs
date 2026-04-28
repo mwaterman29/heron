@@ -1,14 +1,15 @@
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
-/// Where the update manifest lives. Set this constant to the raw URL of the
-/// .vsig file in your published repo (e.g. raw.githubusercontent.com/{user}/
-/// {repo}/main/.vsig). Until it's set, check_for_updates() returns
-/// `available: false` silently — the app runs fine, you just don't get
-/// update notifications.
+/// Where the update manifest lives. Currently points at the .vsig committed
+/// at the repo root on the `main` branch. Bump the version + download_url in
+/// that file with each release; running clients fetch it on a 24h cadence
+/// and surface a banner when the manifest's version exceeds the installed
+/// one.
 ///
 /// See SHIPPING.md for the full release workflow.
-pub const UPDATE_MANIFEST_URL: Option<&str> = None;
+pub const UPDATE_MANIFEST_URL: Option<&str> =
+    Some("https://raw.githubusercontent.com/mwaterman29/heron/main/.vsig");
 
 /// Manifest schema. Lives at `.vsig` in the repo root for easy editing.
 /// Format is JSON despite the `.vsig` extension — keeps the name short and

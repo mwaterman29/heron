@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "released": "2026-04-21",
-  "notes": "Initial release.\n\n- Tauri desktop app with system tray\n- 8 marketplace scrapers + LLM evaluation pipeline\n- Discord DM digest notifications\n- Queue triage workflow with new/following/purchased/lost/rejected states\n- Targets editor with exact / category-hunt / general-review modes\n",
-  "download_url": "https://github.com/USER/REPO/releases/latest"
+  "released": "2026-04-27",
+  "notes": "Initial public release.\n\n- Cost estimate panel surfaces real token usage from your last run.\n- USD-only filter + sold-listing detection skip non-actionable rows before LLM eval.\n- Cross-site title dedup keeps the queue clean across regional Craigslist subdomains and FBMP cross-posts.\n- Skip-tier listings no longer show up in the Queue.\n- Location config (Region + FBMP slug) lives in Settings.\n- Heron runs unauthenticated against all 8 sources.",
+  "download_url": "https://github.com/mwaterman29/heron/releases/latest"
 }

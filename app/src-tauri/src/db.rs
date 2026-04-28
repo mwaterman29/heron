@@ -92,8 +92,14 @@ pub fn recent_deals(config_dir: &Path, limit: u32) -> rusqlite::Result<Vec<DealR
         Some(c) => c,
         None => return Ok(Vec::new()),
     };
+    // is_deal=1 alone isn't enough: grail_match can flip is_deal=1 even when
+    // pass-2 settles on 'overpriced'/'irrelevant'. Require the final deal_tier
+    // to actually look actionable.
     let sql = format!(
-        "SELECT {} FROM seen_items WHERE is_deal = 1 ORDER BY last_seen_at DESC LIMIT ?1",
+        "SELECT {} FROM seen_items \
+         WHERE is_deal = 1 \
+           AND COALESCE(deal_tier, '') NOT IN ('overpriced', 'irrelevant', 'skip') \
+         ORDER BY last_seen_at DESC LIMIT ?1",
         DEAL_COLUMNS
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -114,6 +120,7 @@ pub fn queue(config_dir: &Path) -> rusqlite::Result<Vec<DealRow>> {
     let sql = format!(
         "SELECT {} FROM seen_items
          WHERE is_deal = 1
+           AND COALESCE(deal_tier, '') NOT IN ('overpriced', 'irrelevant', 'skip')
          ORDER BY
            CASE COALESCE(listing_state, 'new')
              WHEN 'new' THEN 0

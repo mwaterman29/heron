@@ -37,7 +37,11 @@ export const fbmpScraper: Scraper = {
   needsHeaded: true,
 
   async scrape(search: ResolvedSearch, config: ScraperConfig): Promise<RawListing[]> {
-    const location = (search.location ?? 'boston').toLowerCase();
+    // FBMP_LOCATION takes priority so users in non-urban areas can set a
+    // numeric area ID (e.g. 108472329193294) without affecting Craigslist's
+    // city subdomain. Falls back to the global location when unset.
+    const fbmpOverride = process.env.FBMP_LOCATION?.trim();
+    const location = (fbmpOverride || search.location || 'boston').toLowerCase();
     const url = `https://www.facebook.com/marketplace/${location}/search?query=${encodeURIComponent(search.query)}`;
     logger.info({ site: SITE_ID, searchId: search.id, url }, 'scraping');
 
