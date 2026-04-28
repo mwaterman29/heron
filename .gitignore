@@ -19,6 +19,10 @@ app/dev-sidecar/target/
 app/src-tauri/binaries/*.exe
 app/src-tauri/binaries/*.bat
 
+# Bundled sidecar runtime (created by `npm run prepare-sidecar` ahead of
+# `cargo tauri build`; node.exe + dist/ + production node_modules)
+app/src-tauri/sidecar-runtime/
+
 # Design reference dump (pulled from Claude Design)
 .design-ref/
 

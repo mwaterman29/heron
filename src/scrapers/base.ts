@@ -1,17 +1,28 @@
 import * as puppeteerExtraNs from 'puppeteer-extra';
+import * as puppeteerCoreNs from 'puppeteer-core';
 import StealthPluginNs from 'puppeteer-extra-plugin-stealth';
-import type { Browser } from 'puppeteer';
-
-// puppeteer-extra's CJS bundle attaches both default export and all named
-// exports to module.exports. Under NodeNext TS types it as the namespace,
-// so we unwrap to the real puppeteer-extra instance that has .use() / .launch().
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const puppeteer: any = (puppeteerExtraNs as any).default ?? puppeteerExtraNs;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const StealthPlugin: any = (StealthPluginNs as any).default ?? StealthPluginNs;
+import type { Browser } from 'puppeteer-core';
 import type { RawListing } from '../db.js';
 import type { ResolvedSearch } from '../config.js';
+import { BrowserNotFoundError, detectBrowser } from '../utils/browser.js';
+import { logger } from '../utils/logger.js';
 
+// puppeteer-extra normally wraps the full `puppeteer` package (which bundles
+// Chromium). For distribution we use `puppeteer-core` (no bundled Chromium)
+// and pass `executablePath` from a runtime browser scan, so the MSI doesn't
+// have to ship a 150 MB Chromium download. addExtra() lets us wrap the
+// stripped-down core with the same .use() plugin API puppeteer-extra exposes.
+//
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const puppeteerExtra: any = (puppeteerExtraNs as any).default ?? puppeteerExtraNs;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const puppeteerCore: any = (puppeteerCoreNs as any).default ?? puppeteerCoreNs;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const StealthPlugin: any = (StealthPluginNs as any).default ?? StealthPluginNs;
+
+const puppeteer = puppeteerExtra.addExtra
+  ? puppeteerExtra.addExtra(puppeteerCore)
+  : puppeteerExtra; // fallback if older puppeteer-extra without addExtra
 puppeteer.use(StealthPlugin());
 
 export type { RawListing };
@@ -63,8 +74,17 @@ export interface Scraper {
   fetchDetail?(url: string, config: ScraperConfig): Promise<DetailPage>;
 }
 
+let cachedBrowserPath: string | null = null;
+
 export async function createBrowser(config: ScraperConfig): Promise<Browser> {
+  if (!cachedBrowserPath) {
+    const browser = detectBrowser();
+    if (!browser) throw new BrowserNotFoundError();
+    cachedBrowserPath = browser.path;
+    logger.info({ name: browser.name, path: browser.path }, 'using installed browser');
+  }
   return puppeteer.launch({
+    executablePath: cachedBrowserPath,
     headless: config.headless,
     args: [
       '--no-sandbox',

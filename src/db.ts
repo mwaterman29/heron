@@ -228,6 +228,42 @@ CREATE TABLE IF NOT EXISTS price_history (
   };
 
   backfillDedupByTitle();
+  purgeNonUsdIfEnabled();
+}
+
+/**
+ * When USD_ONLY is enabled, purge any pre-existing rows priced in non-USD
+ * currencies. The upsert-time filter (src/index.ts) only blocks new
+ * non-USD listings going forward — without this, listings inserted before
+ * the user enabled USD_ONLY (or before the feature shipped) sit in the
+ * queue indefinitely. Idempotent: no-op when USD_ONLY is off or when there
+ * are no non-USD rows. NULL currency rows are preserved (they're junk-
+ * priced listings that the LLM filters as irrelevant anyway, not actively
+ * non-USD).
+ */
+function purgeNonUsdIfEnabled(): void {
+  const usdOnly = (process.env.USD_ONLY ?? 'true') !== 'false';
+  if (!usdOnly) return;
+
+  const ids = db!
+    .prepare(
+      `SELECT id FROM seen_items
+       WHERE currency IS NOT NULL AND currency != 'USD'`,
+    )
+    .all() as Array<{ id: string }>;
+  if (ids.length === 0) return;
+
+  const delHistory = db!.prepare('DELETE FROM price_history WHERE item_id = ?');
+  const delItem = db!.prepare('DELETE FROM seen_items WHERE id = ?');
+  const tx = db!.transaction((rows: Array<{ id: string }>) => {
+    for (const r of rows) {
+      delHistory.run(r.id);
+      delItem.run(r.id);
+    }
+  });
+  tx(ids);
+  // eslint-disable-next-line no-console
+  console.log(`[db] USD_ONLY purge: removed ${ids.length} non-USD listings`);
 }
 
 /**

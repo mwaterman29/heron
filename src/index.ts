@@ -179,7 +179,15 @@ async function main() {
 
     listingsScraped += listings.length;
     for (const raw of listings) {
-      if (usdOnly && raw.currency != null && raw.currency !== 'USD') {
+      // When USD_ONLY is on, skip both known-non-USD AND null-currency
+      // listings. Null usually means the scraper's currency regex didn't
+      // recognize the token (e.g. HiFi Shark seeing KZT/CZK before we
+      // added them); safer to drop the listing than let the LLM extract a
+      // USD estimate from the title text and tag it as a deal anyway. For
+      // scrapers that hardcode currency='USD' (eBay/CL/FBMP/USAM/Reddit),
+      // null means no parseable price — non-actionable, would be filtered
+      // as irrelevant downstream regardless.
+      if (usdOnly && raw.currency !== 'USD') {
         skippedNonUsd++;
         continue;
       }

@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build && npm --prefix .. run prepare-sidecar"
   },
   "app": {
     "windows": [
@@ -33,6 +33,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/heron-sidecar"]
+    "externalBin": ["binaries/heron-sidecar"],
+    "resources": ["sidecar-runtime/**/*"]
   }
 }

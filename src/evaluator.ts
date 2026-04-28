@@ -37,9 +37,13 @@ CURRENCY + USD CONVERSION (CRITICAL):
 - Compare extracted_price (USD) against the reference tiers (USD) when choosing deal_tier.
 - If you cannot determine either the price or a reasonable USD conversion, mark the listing irrelevant.
 
-SHIPPING / GEOGRAPHY:
-- If the reference has a shipping_notes field, it describes geography/landed-cost constraints the buyer cares about.
-- Respect it. A listing that violates the constraint (e.g. located in the UK for a "US-only bulky item") should be downgraded or marked irrelevant per the constraint's instruction.
+SHIPPING / GEOGRAPHY (HARD CONSTRAINT — not a preference):
+- If the reference has a shipping_notes field, treat it as a HARD CONSTRAINT, not a hint. A listing that violates it MUST be marked "irrelevant" — regardless of how attractive the sticker price looks. The user can't actually buy it, so a "deal" or "steal" tier is misleading and pollutes the queue.
+- Common violations to mark irrelevant on sight:
+  • "US-only" / "local pickup" notes + listing located outside the US (UK, EU, Japan, Kazakhstan, Czechia, etc.)
+  • "~100mi of <city>" notes + listing clearly outside that radius (different state/country)
+  • Reasoning that includes "international shipping is impractical/risky/prohibitive" — that IS the constraint violation; don't surface as Deal-with-caveat.
+- Do NOT downgrade-but-still-tag-Deal a listing that violates a hard constraint. The verdict is irrelevant, full stop.
 - Landed cost matters more than sticker price for heavy/bulky items: factor in likely shipping, import duty, and damage risk if the user's notes imply it.
 
 RELEVANCE:

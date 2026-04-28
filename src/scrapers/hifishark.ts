@@ -113,9 +113,12 @@ export const hifisharkScraper: Scraper = {
           const firstLine = rawText.split('\n').map((s) => s.trim()).filter(Boolean)[0] ?? '';
           const title = (a.innerText || '').trim() || firstLine;
 
-          // Price + currency: match a currency token then a number
+          // Price + currency: match a currency token then a number.
+          // Currency list is hardcoded to avoid false-positive matches
+          // on random uppercase tokens (USB, MAX, etc.); add new codes
+          // here as we discover them in queue noise.
           const priceMatch = rawText.match(
-            /(US\$|USD|EUR|GBP|CAD|AUD|PLN|SEK|NOK|DKK|CHF|JPY|UAH|€|£|\$|¥)\s?([\d,]+(?:\.\d+)?)/i,
+            /(US\$|USD|EUR|GBP|CAD|AUD|PLN|SEK|NOK|DKK|CHF|JPY|UAH|KZT|CZK|€|£|\$|¥)\s?([\d,]+(?:\.\d+)?)/i,
           );
           const price = priceMatch ? priceMatch[0] : null;
           // Normalize the currency token
