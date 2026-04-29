@@ -110,7 +110,7 @@ pub fn write(config_dir: &Path, updates: Vec<SecretEntry>) -> std::io::Result<()
     }
 
     let mut content = String::new();
-    content.push_str("# Managed by Deal Hunter\n");
+    content.push_str("# Managed by Heron\n");
     for (k, v) in &parsed {
         // Quote values with spaces
         if v.contains(' ') || v.contains('#') {

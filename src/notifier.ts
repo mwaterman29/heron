@@ -279,7 +279,7 @@ export class DiscordDMNotifier implements Notifier {
     const hasGrail = payloads.some((p) => p.verdict.grail_match);
     const header = hasGrail
       ? `💎 **GRAIL MATCH** + ${payloads.length - 1} other finds`
-      : `📊 **Deal Hunter** — ${payloads.length} finds today`;
+      : `📊 **Heron** — ${payloads.length} finds today`;
 
     // Discord content limit = 2000 chars. Split at entry boundaries if needed.
     const chunks: string[] = [];

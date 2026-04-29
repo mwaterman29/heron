@@ -14,7 +14,7 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&open_i, &run_i, &sep_i, &quit_i])?;
 
     let _tray = TrayIconBuilder::with_id("main-tray")
-        .tooltip("Deal Hunter — Idle")
+        .tooltip("Heron — Idle")
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)
